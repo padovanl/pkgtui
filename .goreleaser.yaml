@@ -38,8 +38,8 @@ nfpms:
     homepage: https://github.com/padovanl/pkgtui
     maintainer: padovanl
     description: |-
-      Interfaccia a terminale (TUI) in stile htop per cercare, installare,
-      rimuovere e aggiornare pacchetti apt e snap.
+      An htop-style terminal UI (TUI) to search, install, remove and
+      upgrade apt and snap packages.
     license: MIT
     formats:
       - deb

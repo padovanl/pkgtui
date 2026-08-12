@@ -26,11 +26,11 @@ const (
 func (m viewMode) label() string {
 	switch m {
 	case viewUpgradable:
-		return "Aggiornabili"
+		return "Upgradable"
 	case viewSearch:
-		return "Ricerca"
+		return "Search"
 	default:
-		return "Installati"
+		return "Installed"
 	}
 }
 
@@ -124,7 +124,7 @@ func NewPanel(mgr pkg.Manager) *Panel {
 	l.SetFilteringEnabled(false)
 
 	ti := textinput.New()
-	ti.Placeholder = "cerca pacchetti... (invio per confermare)"
+	ti.Placeholder = "search packages... (enter to confirm)"
 	ti.CharLimit = 100
 	ti.Prompt = "🔍 "
 
@@ -238,7 +238,7 @@ func (p *Panel) Update(msg tea.Msg) (*Panel, tea.Cmd) {
 		p.err = msg.err
 		if msg.err == nil && p.mode == viewSearch {
 			p.setItems(msg.pkgs)
-			p.statusMsg = fmt.Sprintf("%d risultati per %q", len(msg.pkgs), p.lastQuery)
+			p.statusMsg = fmt.Sprintf("%d results for %q", len(msg.pkgs), p.lastQuery)
 		}
 		return p, nil
 	case infoResultMsg:
@@ -256,9 +256,9 @@ func (p *Panel) Update(msg tea.Msg) (*Panel, tea.Cmd) {
 		p.actionRunning = false
 		p.screen = screenList
 		if msg.err != nil {
-			p.statusMsg = errorStyle.Render("Errore: " + msg.err.Error())
+			p.statusMsg = errorStyle.Render("Error: " + msg.err.Error())
 		} else {
-			p.statusMsg = "Operazione completata."
+			p.statusMsg = "Done."
 		}
 		p.loading = true
 		return p, tea.Batch(p.refreshCmd(), p.spinner.Tick)
@@ -412,11 +412,11 @@ func (p *Panel) startInstall() (*Panel, tea.Cmd) {
 		return p, nil
 	}
 	if sel.Status != pkg.StatusAvailable {
-		p.statusMsg = "Già installato: usa 'u' per aggiornare o 'd' per rimuovere."
+		p.statusMsg = "Already installed: use 'u' to upgrade or 'd' to remove."
 		return p, nil
 	}
 	argv := p.mgr.InstallCmd(sel.Name)
-	p.pending = &pendingAction{label: fmt.Sprintf("Installare %s?", sel.Name), argv: argv}
+	p.pending = &pendingAction{label: fmt.Sprintf("Install %s?", sel.Name), argv: argv}
 	p.screen = screenConfirm
 	return p, nil
 }
@@ -427,11 +427,11 @@ func (p *Panel) startRemove() (*Panel, tea.Cmd) {
 		return p, nil
 	}
 	if sel.Status == pkg.StatusAvailable {
-		p.statusMsg = "Non è installato."
+		p.statusMsg = "Not installed."
 		return p, nil
 	}
 	argv := p.mgr.RemoveCmd(sel.Name)
-	p.pending = &pendingAction{label: fmt.Sprintf("Rimuovere %s?", sel.Name), argv: argv}
+	p.pending = &pendingAction{label: fmt.Sprintf("Remove %s?", sel.Name), argv: argv}
 	p.screen = screenConfirm
 	return p, nil
 }
@@ -442,18 +442,18 @@ func (p *Panel) startUpgrade() (*Panel, tea.Cmd) {
 		return p, nil
 	}
 	if sel.Status != pkg.StatusUpgradable {
-		p.statusMsg = "Nessun aggiornamento disponibile per questo pacchetto."
+		p.statusMsg = "No upgrade available for this package."
 		return p, nil
 	}
 	argv := p.mgr.UpgradeCmd(sel.Name)
-	p.pending = &pendingAction{label: fmt.Sprintf("Aggiornare %s?", sel.Name), argv: argv}
+	p.pending = &pendingAction{label: fmt.Sprintf("Upgrade %s?", sel.Name), argv: argv}
 	p.screen = screenConfirm
 	return p, nil
 }
 
 func (p *Panel) startUpgradeAll() (*Panel, tea.Cmd) {
 	argv := p.mgr.UpgradeCmd("")
-	p.pending = &pendingAction{label: fmt.Sprintf("Aggiornare TUTTI i pacchetti %s?", p.mgr.Name()), argv: argv}
+	p.pending = &pendingAction{label: fmt.Sprintf("Upgrade ALL %s packages?", p.mgr.Name()), argv: argv}
 	p.screen = screenConfirm
 	return p, nil
 }
@@ -461,10 +461,10 @@ func (p *Panel) startUpgradeAll() (*Panel, tea.Cmd) {
 func (p *Panel) startSync() (*Panel, tea.Cmd) {
 	argv := p.mgr.UpdateCmd()
 	if argv == nil {
-		p.statusMsg = fmt.Sprintf("%s non richiede una sincronizzazione esplicita.", p.mgr.Name())
+		p.statusMsg = fmt.Sprintf("%s does not need an explicit sync.", p.mgr.Name())
 		return p, nil
 	}
-	p.pending = &pendingAction{label: "Sincronizzare la cache dei pacchetti?", argv: argv}
+	p.pending = &pendingAction{label: "Sync the package cache?", argv: argv}
 	p.screen = screenConfirm
 	return p, nil
 }
@@ -492,14 +492,14 @@ func (p *Panel) renderHeader() string {
 
 func (p *Panel) View() string {
 	if !p.mgr.Available() {
-		return dimStyle.Render(fmt.Sprintf("%s non è disponibile su questo sistema.", p.mgr.Name()))
+		return dimStyle.Render(fmt.Sprintf("%s is not available on this system.", p.mgr.Name()))
 	}
 
 	if p.screen == screenDetail {
 		return lipgloss.JoinVertical(lipgloss.Left,
 			p.renderHeader(),
 			detailBoxStyle.Width(maxInt(p.width-4, 10)).Render(p.viewport.View()),
-			dimStyle.Render("esc/enter: indietro   ↑/↓: scorri"),
+			dimStyle.Render("esc/enter: back   ↑/↓: scroll"),
 		)
 	}
 
@@ -513,7 +513,7 @@ func (p *Panel) View() string {
 	var status string
 	switch {
 	case p.loading:
-		status = p.spinner.View() + " caricamento..."
+		status = p.spinner.View() + " loading..."
 	case p.err != nil:
 		status = errorStyle.Render(p.err.Error())
 	case p.statusMsg != "":
@@ -526,7 +526,7 @@ func (p *Panel) View() string {
 	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
 
 	if p.screen == screenConfirm && p.pending != nil {
-		modal := modalStyle.Render(p.pending.label + "\n\n[y] conferma    [n] annulla")
+		modal := modalStyle.Render(p.pending.label + "\n\n[y] confirm    [n] cancel")
 		content = lipgloss.Place(p.width, p.height, lipgloss.Center, lipgloss.Center, modal)
 	}
 

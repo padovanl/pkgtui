@@ -1,70 +1,69 @@
 # pkgtui
 
-Un'interfaccia a terminale (TUI) in stile **htop** per cercare, installare,
-rimuovere e aggiornare pacchetti **apt** e **snap**, da un'unica dashboard,
-senza dover ricordare la sintassi dei due gestori di pacchetti.
+An **htop-style** terminal UI (TUI) to search, install, remove and upgrade
+**apt** and **snap** packages, from a single dashboard, without having to
+remember the syntax of either package manager.
 
 ```
   pkgtui                                                              apt      snap
- APT — Installati (543)
+ APT — Installed (543)
 ● bash                         5.1-6ubuntu1.1
 ● curl                         7.81.0-1ubuntu1.25
 ▲ nftables                     1.0.2-1ubuntu3
 ● python3                      3.10.6-1~22.04.1
 ...
-  → apt/snap  tab vista  / cerca  enter dettagli  i installa  d rimuovi  u aggiorna  U aggiorna tutto  s sync  q esci
+  → apt/snap  tab view  / search  enter details  i install  d remove  u upgrade  U upgrade all  s sync  q quit
 ```
 
-## Funzionalità
+## Features
 
-- **Due backend distinti**: tab separate per `apt` e `snap`, ciascuna con il
-  proprio stato (i due mondi non vengono mischiati).
-- **Ricerca live**: cerca pacchetti per nome/descrizione (`apt-cache search`
+- **Two separate backends**: dedicated tabs for `apt` and `snap`, each with
+  its own state (the two worlds are never mixed together).
+- **Live search**: search packages by name/description (`apt-cache search`
   / `snap find`).
-- **Installati / Aggiornabili**: viste dedicate per vedere subito cosa hai
-  installato e cosa ha un aggiornamento disponibile.
-- **Dettagli pacchetto**: descrizione, versione, dipendenze (apt) o
-  publisher/canali (snap) prima di installare.
-- **Installazione/rimozione/aggiornamento con conferma**: ogni azione
-  privilegiata chiede conferma (`y`/`n`) prima di essere eseguita.
-- **Output live**: i comandi `apt-get`/`snap` vengono eseguiti collegati al
-  terminale reale (incluso il prompt della password `sudo`), così vedi
-  esattamente cosa succede, come da riga di comando.
-- **Aggiorna tutto**: un tasto per lanciare `apt-get upgrade` o `snap
-  refresh` su tutti i pacchetti del backend attivo.
+- **Installed / Upgradable**: dedicated views to see at a glance what you
+  have installed and what has an update available.
+- **Package details**: description, version, dependencies (apt) or
+  publisher/channels (snap) before you install anything.
+- **Install/remove/upgrade with confirmation**: every privileged action
+  asks for confirmation (`y`/`n`) before running.
+- **Live output**: `apt-get`/`snap` commands run attached to the real
+  terminal (including the `sudo` password prompt), so you see exactly
+  what's happening, just like from the command line.
+- **Upgrade all**: one key to run `apt-get upgrade` or `snap refresh` on
+  every package of the active backend.
 
-## Installazione
+## Installation
 
-Nessuna verifica/store richiesta: scarichi l'asset dalla [pagina delle
-release](https://github.com/padovanl/pkgtui/releases) e lo installi in
-locale.
+No verification/store required: grab the asset from the [releases
+page](https://github.com/padovanl/pkgtui/releases) and install it locally.
 
-### Pacchetto `.deb` (Debian/Ubuntu e derivate)
+### `.deb` package (Debian/Ubuntu and derivatives)
 
 ```bash
-curl -LO https://github.com/padovanl/pkgtui/releases/latest/download/pkgtui_<versione>_amd64.deb
-sudo apt install ./pkgtui_<versione>_amd64.deb
+curl -LO https://github.com/padovanl/pkgtui/releases/latest/download/pkgtui_<version>_amd64.deb
+sudo apt install ./pkgtui_<version>_amd64.deb
 ```
 
-### Pacchetto `.snap` (side-load, senza Snap Store)
+### `.snap` package (side-load, no Snap Store)
 
-`pkgtui` deve poter invocare `apt`/`snap` sul sistema host, quindi il pacchetto
-usa confinement `classic`:
+`pkgtui` needs to invoke `apt`/`snap` on the host system, so the package
+uses `classic` confinement:
 
 ```bash
-curl -LO https://github.com/padovanl/pkgtui/releases/latest/download/pkgtui_<versione>_amd64.snap
-sudo snap install --dangerous --classic pkgtui_<versione>_amd64.snap
+curl -LO https://github.com/padovanl/pkgtui/releases/latest/download/pkgtui_<version>_amd64.snap
+sudo snap install --dangerous --classic pkgtui_<version>_amd64.snap
 ```
 
-### Binario standalone (qualsiasi distro Linux con apt e/o snap)
+### Standalone binary (any Linux distro with apt and/or snap)
 
 ```bash
-curl -LO https://github.com/padovanl/pkgtui/releases/latest/download/pkgtui_<versione>_linux_amd64.tar.gz
-tar -xzf pkgtui_<versione>_linux_amd64.tar.gz
+curl -LO https://github.com/padovanl/pkgtui/releases/latest/download/pkgtui_<version>_linux_amd64.tar.gz
+tar -xzf pkgtui_<version>_linux_amd64.tar.gz
 sudo mv pkgtui /usr/local/bin/
 ```
 
-### Da sorgente
+### From source
 
 ```bash
 git clone https://github.com/padovanl/pkgtui.git
@@ -73,57 +72,62 @@ go build -o pkgtui .
 sudo mv pkgtui /usr/local/bin/
 ```
 
-## Utilizzo
+## Usage
 
 ```bash
 pkgtui
 ```
 
-| Tasto       | Azione                                   |
-| ----------- | ----------------------------------------- |
-| `←` / `→`   | Cambia backend (apt / snap)               |
-| `tab`       | Cambia vista (Installati / Aggiornabili / Ricerca) |
-| `/`         | Cerca (poi `invio` per lanciare la ricerca) |
-| `↑`/`↓`, `j`/`k` | Naviga la lista                      |
-| `enter`     | Mostra i dettagli del pacchetto selezionato |
-| `i`         | Installa il pacchetto selezionato          |
-| `d`         | Rimuove il pacchetto selezionato           |
-| `u`         | Aggiorna il pacchetto selezionato          |
-| `U`         | Aggiorna **tutti** i pacchetti del backend attivo |
-| `s`         | Sincronizza la cache (`apt-get update`; no-op su snap) |
-| `y` / `n`   | Conferma / annulla un'azione               |
-| `esc`       | Torna indietro                             |
-| `q`         | Esci                                       |
+| Key         | Action                                     |
+| ----------- | ------------------------------------------- |
+| `←` / `→`   | Switch backend (apt / snap)                 |
+| `tab`       | Switch view (Installed / Upgradable / Search) |
+| `/`         | Search (then `enter` to run the search)     |
+| `↑`/`↓`, `j`/`k` | Navigate the list                      |
+| `enter`     | Show details for the selected package       |
+| `i`         | Install the selected package                |
+| `d`         | Remove the selected package                 |
+| `u`         | Upgrade the selected package                |
+| `U`         | Upgrade **all** packages on the active backend |
+| `s`         | Sync the cache (`apt-get update`; no-op on snap) |
+| `y` / `n`   | Confirm / cancel an action                  |
+| `esc`       | Go back                                     |
+| `q`         | Quit                                        |
 
-Le azioni che modificano il sistema (installazione, rimozione,
-aggiornamento) vengono eseguite con `sudo`: pkgtui cede il terminale al
-comando reale, quindi vedrai l'eventuale richiesta della password e l'output
-di `apt`/`snap` esattamente come da riga di comando.
+Actions that change the system (install, remove, upgrade) run with `sudo`:
+pkgtui hands control of the terminal to the real command, so you'll see any
+password prompt and `apt`/`snap` output exactly as you would from the
+command line.
 
-## Requisiti
+## Requirements
 
-- Linux con `apt`/`dpkg` e/o `snapd` installati (basta averne anche solo uno
-  dei due: la tab dell'altro segnala semplicemente "non disponibile").
-- `sudo` configurato per l'utente corrente, per le operazioni privilegiate.
+- Linux with `apt`/`dpkg` and/or `snapd` installed (having just one of the
+  two is fine: the other tab simply reports "not available").
+- `sudo` configured for the current user, for privileged operations.
 
-## Build & pacchettizzazione (per contribuire)
+## Building & packaging (for contributors)
 
-Il progetto usa [goreleaser](https://goreleaser.com) per compilare i
-binari multi-arch e generare il `.deb` (via nfpm integrato), e
-[snapcraft](https://snapcraft.io/docs/snapcraft-overview) per il `.snap`
-(vedi `snap/snapcraft.yaml`).
+The project uses [goreleaser](https://goreleaser.com) to build multi-arch
+binaries and generate the `.deb` (via its built-in nfpm integration), and
+[snapcraft](https://snapcraft.io/docs/snapcraft-overview) for the `.snap`
+(see `snap/snapcraft.yaml`).
+
+Development happens on `develop`; releases are cut from `main`: merge
+`develop` into `main` when it's ready, then tag `main` with `vX.Y.Z` to
+trigger the release workflow (which refuses to run on tags that aren't on
+`main`).
 
 ```bash
-# Build + .deb locali, senza pubblicare nulla
+# Local build + .deb, without publishing anything
 goreleaser release --snapshot --clean --skip=publish
 
-# Pacchetto snap locale
+# Local snap package
 snapcraft pack
 ```
 
-Le release ufficiali vengono generate automaticamente da GitHub Actions ad
-ogni tag `vX.Y.Z` (vedi `.github/workflows/release.yml`).
+Official releases are built automatically by GitHub Actions on every
+`vX.Y.Z` tag (see `.github/workflows/release.yml`).
 
-## Licenza
+## License
 
-MIT — vedi [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).

@@ -118,7 +118,7 @@ func (a *App) renderFooter() string {
 
 func (a *App) View() string {
 	if a.width == 0 {
-		return "avvio..."
+		return "starting..."
 	}
 	body := a.activePanel().View()
 	return lipgloss.JoinVertical(lipgloss.Left,
