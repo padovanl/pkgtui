@@ -15,8 +15,8 @@ const (
 // Package is a single result from a search or listing operation.
 type Package struct {
 	Name      string
-	Version   string   // candidate/available version
-	Installed string   // installed version, if any
+	Version   string // candidate/available version
+	Installed string // installed version, if any
 	Summary   string
 	Status    Status
 	Source    string // "apt" or "snap"

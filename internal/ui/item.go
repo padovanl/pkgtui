@@ -29,10 +29,11 @@ func statusBullet(s pkg.Status) (string, lipgloss.Style) {
 }
 
 // itemDelegate renders each row as:
-//   ● name          version          summary
+//
+//	● name          version          summary
 type itemDelegate struct{}
 
-func (d itemDelegate) Height() int                            { return 1 }
+func (d itemDelegate) Height() int                             { return 1 }
 func (d itemDelegate) Spacing() int                            { return 0 }
 func (d itemDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 

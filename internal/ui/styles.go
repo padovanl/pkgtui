@@ -6,12 +6,12 @@ import "github.com/charmbracelet/lipgloss"
 // yellow for attention (upgradable), cyan for the active tab/accent, red for
 // destructive actions.
 var (
-	colorBg       = lipgloss.Color("235")
-	colorFg       = lipgloss.Color("252")
-	colorAccent   = lipgloss.Color("42")  // green
-	colorWarn     = lipgloss.Color("220") // yellow
-	colorDanger   = lipgloss.Color("203") // red
-	colorMuted    = lipgloss.Color("244")
+	colorBg        = lipgloss.Color("235")
+	colorFg        = lipgloss.Color("252")
+	colorAccent    = lipgloss.Color("42")  // green
+	colorWarn      = lipgloss.Color("220") // yellow
+	colorDanger    = lipgloss.Color("203") // red
+	colorMuted     = lipgloss.Color("244")
 	colorHighlight = lipgloss.Color("39") // cyan
 )
 
