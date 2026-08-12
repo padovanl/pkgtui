@@ -1,0 +1,16 @@
+# Build artifacts
+/dist/
+/pkgtui
+*.snap
+*.deb
+
+# Go
+*.test
+*.out
+
+# Editor/OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+.claude/

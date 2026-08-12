@@ -1,0 +1,28 @@
+name: pkgtui
+base: core22
+version: "0.1.0"
+summary: TUI in stile htop per cercare/installare/rimuovere pacchetti apt e snap
+description: |
+  pkgtui è un'interfaccia a terminale (TUI) in stile htop per cercare,
+  installare, rimuovere e aggiornare pacchetti apt e snap da un'unica
+  dashboard, senza dover ricordare la sintassi dei due gestori di pacchetti.
+
+  Questo pacchetto usa confinement "classic" perché pkgtui deve poter
+  invocare apt-get/dpkg/snap sul sistema host per fare il suo lavoro; non è
+  pensato per essere pubblicato sullo Snap Store, ma installato in locale con:
+
+    snap install --dangerous --classic pkgtui_<versione>_<arch>.snap
+
+grade: stable
+confinement: classic
+
+apps:
+  pkgtui:
+    command: bin/pkgtui
+
+parts:
+  pkgtui:
+    plugin: go
+    source: .
+    build-snaps:
+      - go/1.23/stable

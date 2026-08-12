@@ -1,0 +1,72 @@
+version: 2
+
+project_name: pkgtui
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: pkgtui
+    main: .
+    binary: pkgtui
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+
+archives:
+  - id: pkgtui-archive
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - README.md
+      - LICENSE
+
+nfpms:
+  - id: pkgtui-deb
+    package_name: pkgtui
+    file_name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Arch }}
+    vendor: pkgtui
+    homepage: https://github.com/padovanl/pkgtui
+    maintainer: padovanl
+    description: |-
+      Interfaccia a terminale (TUI) in stile htop per cercare, installare,
+      rimuovere e aggiornare pacchetti apt e snap.
+    license: MIT
+    formats:
+      - deb
+    section: utils
+    priority: optional
+    recommends:
+      - snapd
+    contents:
+      - src: ./README.md
+        dst: /usr/share/doc/pkgtui/README.md
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+release:
+  github:
+    owner: padovanl
+    name: pkgtui
+  draft: false
+  prerelease: auto
