@@ -18,6 +18,7 @@ type Package struct {
 	Version   string // candidate/available version
 	Installed string // installed version, if any
 	Summary   string
+	Size      int64 // installed size in bytes, 0 if unknown
 	Status    Status
 	Source    string // "apt" or "snap"
 }
@@ -57,4 +58,26 @@ type Manager interface {
 	// UpdateCmd returns the argv to refresh the package index/cache, or
 	// nil if the backend has no such concept.
 	UpdateCmd() []string
+}
+
+// OrphanLister is implemented by backends that can report packages no
+// longer required by anything else (apt's autoremove candidates). The UI
+// only shows the "Orphaned" view for backends implementing this.
+type OrphanLister interface {
+	ListOrphaned() ([]Package, error)
+}
+
+// BatchManager is implemented by backends that can install/remove several
+// packages in a single invocation, for the UI's multi-select action.
+type BatchManager interface {
+	InstallManyCmd(names []string) []string
+	RemoveManyCmd(names []string) []string
+}
+
+// ChannelInstaller is implemented by backends with a channel/track concept
+// for installs (snap's stable/candidate/beta/edge). The UI only offers a
+// channel picker for backends implementing this.
+type ChannelInstaller interface {
+	Channels() []string
+	InstallChannelCmd(name, channel string) []string
 }

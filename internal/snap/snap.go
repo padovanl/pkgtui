@@ -3,7 +3,6 @@
 package snap
 
 import (
-	"bufio"
 	"fmt"
 	"os/exec"
 	"regexp"
@@ -33,23 +32,14 @@ func columnSplit(line string, maxFields int) []string {
 	return columnRe.Split(strings.TrimRight(line, " "), maxFields)
 }
 
-func (m *Manager) installedMap() (map[string]pkg.Package, error) {
-	out, err := exec.Command("snap", "list").Output()
-	if err != nil {
-		// "no snaps installed" makes snap list exit non-zero on some versions.
-		if len(out) == 0 {
-			return map[string]pkg.Package{}, nil
-		}
-	}
+// parseListOutput parses "snap list" output into name -> installed package.
+func parseListOutput(out string) map[string]pkg.Package {
 	result := make(map[string]pkg.Package)
-	scanner := bufio.NewScanner(strings.NewReader(string(out)))
-	first := true
-	for scanner.Scan() {
-		if first {
-			first = false
+	for i, line := range strings.Split(out, "\n") {
+		if i == 0 || line == "" {
 			continue // header row
 		}
-		fields := columnSplit(scanner.Text(), 6)
+		fields := columnSplit(line, 6)
 		if len(fields) < 2 {
 			continue
 		}
@@ -62,30 +52,27 @@ func (m *Manager) installedMap() (map[string]pkg.Package, error) {
 			Status:    pkg.StatusInstalled,
 		}
 	}
-	return result, nil
+	return result
 }
 
-func (m *Manager) Search(query string) ([]pkg.Package, error) {
-	out, err := exec.Command("snap", "find", query).Output()
+func (m *Manager) installedMap() (map[string]pkg.Package, error) {
+	out, err := exec.Command("snap", "list").Output()
 	if err != nil {
-		return nil, fmt.Errorf("snap find: %w", err)
-	}
-	installed, err := m.installedMap()
-	if err != nil {
-		installed = map[string]pkg.Package{}
-	}
-
-	var results []pkg.Package
-	scanner := bufio.NewScanner(strings.NewReader(string(out)))
-	first := true
-	for scanner.Scan() {
-		if first {
-			first = false
-			continue // header row
+		// "no snaps installed" makes snap list exit non-zero on some versions.
+		if len(out) == 0 {
+			return map[string]pkg.Package{}, nil
 		}
-		line := scanner.Text()
-		if line == "" {
-			continue
+	}
+	return parseListOutput(string(out)), nil
+}
+
+// parseFindOutput parses "snap find <query>" output, annotating results
+// with install/upgrade status from the already-installed set.
+func parseFindOutput(out string, installed map[string]pkg.Package) []pkg.Package {
+	var results []pkg.Package
+	for i, line := range strings.Split(out, "\n") {
+		if i == 0 || line == "" {
+			continue // header row
 		}
 		fields := columnSplit(line, 5)
 		if len(fields) < 5 {
@@ -110,7 +97,19 @@ func (m *Manager) Search(query string) ([]pkg.Package, error) {
 		}
 		results = append(results, p)
 	}
-	return results, nil
+	return results
+}
+
+func (m *Manager) Search(query string) ([]pkg.Package, error) {
+	out, err := exec.Command("snap", "find", query).Output()
+	if err != nil {
+		return nil, fmt.Errorf("snap find: %w", err)
+	}
+	installed, err := m.installedMap()
+	if err != nil {
+		installed = map[string]pkg.Package{}
+	}
+	return parseFindOutput(string(out), installed), nil
 }
 
 func (m *Manager) ListInstalled() ([]pkg.Package, error) {
@@ -125,25 +124,12 @@ func (m *Manager) ListInstalled() ([]pkg.Package, error) {
 	return results, nil
 }
 
-func (m *Manager) ListUpgradable() ([]pkg.Package, error) {
-	out, err := exec.Command("snap", "refresh", "--list").CombinedOutput()
-	if err != nil {
-		// "All snaps up to date." exits 0; other errors we surface, but an
-		// empty list is not an error condition worth failing on.
-		if !strings.Contains(string(out), "up to date") {
-			return nil, fmt.Errorf("snap refresh --list: %w", err)
-		}
-	}
+// parseRefreshListOutput parses "snap refresh --list" output into the set
+// of packages with an upgrade available.
+func parseRefreshListOutput(out string) []pkg.Package {
 	var results []pkg.Package
-	scanner := bufio.NewScanner(strings.NewReader(string(out)))
-	first := true
-	for scanner.Scan() {
-		line := scanner.Text()
-		if first {
-			first = false
-			continue
-		}
-		if line == "" || strings.Contains(line, "up to date") {
+	for i, line := range strings.Split(out, "\n") {
+		if i == 0 || line == "" || strings.Contains(line, "up to date") {
 			continue
 		}
 		fields := columnSplit(line, 6)
@@ -157,7 +143,19 @@ func (m *Manager) ListUpgradable() ([]pkg.Package, error) {
 			Status:  pkg.StatusUpgradable,
 		})
 	}
-	return results, nil
+	return results
+}
+
+func (m *Manager) ListUpgradable() ([]pkg.Package, error) {
+	out, err := exec.Command("snap", "refresh", "--list").CombinedOutput()
+	if err != nil {
+		// "All snaps up to date." exits 0; other errors we surface, but an
+		// empty list is not an error condition worth failing on.
+		if !strings.Contains(string(out), "up to date") {
+			return nil, fmt.Errorf("snap refresh --list: %w", err)
+		}
+	}
+	return parseRefreshListOutput(string(out)), nil
 }
 
 func (m *Manager) Info(name string) (string, error) {
@@ -187,4 +185,29 @@ func (m *Manager) UpdateCmd() []string {
 	return nil
 }
 
+// InstallManyCmd installs several snaps in one invocation.
+func (m *Manager) InstallManyCmd(names []string) []string {
+	return append([]string{"sudo", "snap", "install"}, names...)
+}
+
+// RemoveManyCmd removes several snaps in one invocation.
+func (m *Manager) RemoveManyCmd(names []string) []string {
+	return append([]string{"sudo", "snap", "remove"}, names...)
+}
+
+// Channels lists the standard snap risk levels, most to least stable.
+func (m *Manager) Channels() []string {
+	return []string{"stable", "candidate", "beta", "edge"}
+}
+
+// InstallChannelCmd installs name from a specific channel/risk level.
+func (m *Manager) InstallChannelCmd(name, channel string) []string {
+	if channel == "" || channel == "stable" {
+		return m.InstallCmd(name)
+	}
+	return []string{"sudo", "snap", "install", "--channel=" + channel, name}
+}
+
 var _ pkg.Manager = (*Manager)(nil)
+var _ pkg.BatchManager = (*Manager)(nil)
+var _ pkg.ChannelInstaller = (*Manager)(nil)
