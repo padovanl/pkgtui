@@ -90,7 +90,8 @@ pkgtui
 | ----------- | ------------------------------------------- |
 | `←` / `→`   | Switch backend (apt / snap)                 |
 | `tab`       | Switch view (Installed / Upgradable / Search) |
-| `/`         | Search (then `enter` to run the search)     |
+| `/`         | Search the full apt/snap catalog (then `enter` to run it) |
+| `f`         | Filter the packages currently shown, live as you type |
 | `↑`/`↓`, `j`/`k` | Navigate the list                      |
 | `enter`     | Show details for the selected package       |
 | `i`         | Install the selected package                |
