@@ -20,6 +20,7 @@ issues: https://github.com/padovanl/pkgtui/issues
 source-code: https://github.com/padovanl/pkgtui
 website: https://github.com/padovanl/pkgtui
 license: MIT
+icon: assets/icon.svg
 
 grade: stable
 confinement: classic
@@ -27,6 +28,7 @@ confinement: classic
 apps:
   pkgtui:
     command: bin/pkgtui
+    desktop: assets/pkgtui.desktop
 
 parts:
   pkgtui:
@@ -42,3 +44,10 @@ parts:
     override-pull: |
       craftctl default
       craftctl set version="$(git -C "$CRAFT_PART_SRC" describe --tags --always --dirty)"
+    # The go plugin only installs the built binary; the app's `desktop:`
+    # entry above expects the .desktop file at this same relative path
+    # inside the packed snap (not the source tree), so it has to be
+    # copied in explicitly.
+    override-build: |
+      craftctl default
+      install -D assets/pkgtui.desktop "$CRAFT_PART_INSTALL/assets/pkgtui.desktop"

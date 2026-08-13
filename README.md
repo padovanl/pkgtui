@@ -81,6 +81,9 @@ remember the syntax of either package manager.
 
 No verification/store required: grab the asset from the [releases
 page](https://github.com/padovanl/pkgtui/releases) and install it locally.
+The `.deb` and `.snap` both register an application entry and icon, so
+pkgtui shows up in your desktop's app launcher (opening in a terminal,
+since it's a TUI) if you have one — a headless install just ignores it.
 
 Below, `<version>` means the release number **without** a leading `v` (a
 `v0.1.1` tag produces `pkgtui_0.1.1_amd64.deb`, not `pkgtui_v0.1.1_amd64.deb`)

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=pkgtui
+GenericName=Package Manager
+Comment=Search, install, remove and upgrade apt and snap packages
+Exec=pkgtui
+Icon=pkgtui
+Terminal=true
+Categories=System;PackageManager;
+Keywords=apt;snap;dpkg;package;install;upgrade;terminal;
+StartupNotify=false
