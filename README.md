@@ -4,7 +4,6 @@
 [![Release](https://github.com/padovanl/pkgtui/actions/workflows/release.yml/badge.svg)](https://github.com/padovanl/pkgtui/actions/workflows/release.yml)
 [![Latest release](https://img.shields.io/github/v/release/padovanl/pkgtui?sort=semver)](https://github.com/padovanl/pkgtui/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/padovanl/pkgtui/total)](https://github.com/padovanl/pkgtui/releases)
-[![Go Report Card](https://goreportcard.com/badge/github.com/padovanl/pkgtui)](https://goreportcard.com/report/github.com/padovanl/pkgtui)
 [![Go version](https://img.shields.io/github/go-mod/go-version/padovanl/pkgtui)](go.mod)
 [![License: MIT](https://img.shields.io/github/license/padovanl/pkgtui)](LICENSE)
 

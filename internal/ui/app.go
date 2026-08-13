@@ -80,7 +80,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 
-	return a, nil
+	// Anything untagged (e.g. list.FilterMatchesMsg, cursor blink ticks)
+	// can only belong to whichever panel currently has keyboard focus,
+	// since only that panel's list/inputs can be mid-interaction.
+	p, cmd := a.activePanel().Update(msg)
+	a.panels[a.active] = p
+	return a, cmd
 }
 
 func (a *App) renderTabBar() string {
@@ -103,7 +108,7 @@ func (a *App) renderTabBar() string {
 
 func (a *App) renderFooter() string {
 	p := a.activePanel()
-	hints := []key.Binding{keys.NextBackend, keys.Tab, keys.Search, keys.Enter}
+	hints := []key.Binding{keys.NextBackend, keys.Tab, keys.Search, keys.Filter, keys.Enter}
 	if p.screen == screenList && !p.search.Focused() {
 		hints = append(hints, keys.Install, keys.Remove, keys.Upgrade, keys.UpgradeAll)
 		if p.SupportsSync() {

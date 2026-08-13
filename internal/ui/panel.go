@@ -122,7 +122,18 @@ func NewPanel(mgr pkg.Manager) *Panel {
 	l.SetShowTitle(false)
 	l.SetShowStatusBar(false)
 	l.SetShowHelp(false)
-	l.SetFilteringEnabled(false)
+	l.SetFilteringEnabled(true)
+	// Reuse our own "f" binding so the list's built-in fuzzy filter starts
+	// on the same key we advertise, instead of its default "/" (which we
+	// use for the apt-cache/snap catalog search instead).
+	l.KeyMap.Filter = keys.Filter
+	// bubbles/list's default NextPage/PrevPage bindings include "f"/"d"/"h"/
+	// "l"/"b"/"u", which otherwise silently steal our filter/remove/backend-
+	// switch/upgrade shortcuts before the list ever considers them for
+	// anything else. We don't page through the list (it just scrolls), so
+	// pare these down to the arrow/pgup/pgdn keys we don't use elsewhere.
+	l.KeyMap.NextPage = key.NewBinding(key.WithKeys("pgdown"))
+	l.KeyMap.PrevPage = key.NewBinding(key.WithKeys("pgup"))
 
 	ti := textinput.New()
 	ti.Placeholder = "search packages... (enter to confirm)"
@@ -148,9 +159,12 @@ func NewPanel(mgr pkg.Manager) *Panel {
 
 func (p *Panel) Backend() string { return p.mgr.Name() }
 
-// IsTyping reports whether the search box currently owns keyboard input, so
-// the root App knows not to steal single-letter shortcuts (including "q").
-func (p *Panel) IsTyping() bool { return p.search.Focused() }
+// IsTyping reports whether the search box or the list's local filter input
+// currently owns keyboard input, so the root App knows not to steal
+// single-letter shortcuts (including "q") meant to be typed as text.
+func (p *Panel) IsTyping() bool {
+	return p.search.Focused() || p.list.FilterState() == list.Filtering
+}
 
 func (p *Panel) Init() tea.Cmd {
 	if !p.mgr.Available() {
@@ -205,10 +219,7 @@ func (p *Panel) setSize(w, h int) {
 		searchH = 3
 	}
 	statusH := 1
-	listH := h - headerH - legendH - searchH - statusH
-	if listH < 3 {
-		listH = 3
-	}
+	listH := max(h-headerH-legendH-searchH-statusH, 3)
 	if w > 4 {
 		p.list.SetSize(w-2, listH)
 	} else {
@@ -265,13 +276,26 @@ func (p *Panel) Update(msg tea.Msg) (*Panel, tea.Cmd) {
 		p.loading = true
 		return p, tea.Batch(p.refreshCmd(), p.spinner.Tick)
 	case spinner.TickMsg:
+		if !p.loading {
+			// Without this, the spinner reschedules itself forever: once
+			// anything triggers a single load, it ticks for the rest of
+			// the program's life even while idle.
+			return p, nil
+		}
 		var cmd tea.Cmd
 		p.spinner, cmd = p.spinner.Update(msg)
 		return p, cmd
 	case tea.KeyMsg:
 		return p.handleKey(msg)
 	}
-	return p, nil
+
+	// Anything we don't recognize ourselves (e.g. list.FilterMatchesMsg,
+	// which bubbles/list sends itself asynchronously while computing the
+	// fuzzy filter) still needs to reach the list, or its internal state
+	// never finishes updating.
+	var cmd tea.Cmd
+	p.list, cmd = p.list.Update(msg)
+	return p, cmd
 }
 
 func (p *Panel) handleKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
@@ -320,9 +344,22 @@ func (p *Panel) handleKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
 		case tea.KeyEsc:
 			p.search.Blur()
 			return p, nil
+		case tea.KeyTab:
+			// Tab is the view-switch shortcut everywhere else; honor it here
+			// too instead of letting the focused text input swallow it
+			// (which used to make Tab appear "stuck" once you searched).
+			return p.cycleView()
 		}
 		var cmd tea.Cmd
 		p.search, cmd = p.search.Update(msg)
+		return p, cmd
+	}
+
+	// While the list's own fuzzy filter is mid-input, let it own the
+	// keyboard (including Enter to apply and Esc to cancel).
+	if p.list.FilterState() == list.Filtering {
+		var cmd tea.Cmd
+		p.list, cmd = p.list.Update(msg)
 		return p, cmd
 	}
 
@@ -334,14 +371,12 @@ func (p *Panel) handleKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
 		p.mode = viewSearch
 		p.search.Focus()
 		return p, textinput.Blink
-	case key.Matches(msg, keys.Tab):
-		p.cycleMode()
-		cmd := p.loadForModeCmd()
-		if p.mode == viewSearch {
-			p.search.Focus()
-			cmd = tea.Batch(cmd, textinput.Blink)
-		}
+	case key.Matches(msg, keys.Filter):
+		var cmd tea.Cmd
+		p.list, cmd = p.list.Update(msg)
 		return p, cmd
+	case key.Matches(msg, keys.Tab):
+		return p.cycleView()
 	case key.Matches(msg, keys.Enter):
 		return p.openDetail()
 	case key.Matches(msg, keys.Install):
@@ -372,6 +407,20 @@ func (p *Panel) cycleMode() {
 	}
 	p.statusMsg = ""
 	p.setSize(p.width, p.height)
+}
+
+// cycleView advances to the next view (Installed -> Upgradable -> Search ->
+// Installed), blurring the search box first so it doesn't swallow the Tab
+// keypress that got us here, then re-focusing it if we landed on Search.
+func (p *Panel) cycleView() (*Panel, tea.Cmd) {
+	p.search.Blur()
+	p.cycleMode()
+	cmd := p.loadForModeCmd()
+	if p.mode == viewSearch {
+		p.search.Focus()
+		cmd = tea.Batch(cmd, textinput.Blink)
+	}
+	return p, cmd
 }
 
 func (p *Panel) loadForModeCmd() tea.Cmd {
@@ -568,9 +617,10 @@ func (p *Panel) renderHelp() string {
 		row("← / →", "switch backend (apt / snap)"),
 		row("tab", "switch view (Installed / Upgradable / Search)"),
 		row("↑/↓, j/k", "move selection"),
-		row("/", "search, then enter to run it"),
+		row("/", "search the full apt/snap catalog, then enter to run it"),
+		row("f", "filter the packages currently shown, as you type"),
 		row("enter", "package details"),
-		row("esc", "back"),
+		row("esc", "back / cancel filter"),
 		"",
 		helpSectionStyle.Render("Actions"),
 		row("i", "install selected package"),

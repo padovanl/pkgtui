@@ -9,6 +9,7 @@ type keyMap struct {
 	NextBackend key.Binding
 	PrevBackend key.Binding
 	Search      key.Binding
+	Filter      key.Binding
 	Enter       key.Binding
 	Install     key.Binding
 	Remove      key.Binding
@@ -29,6 +30,7 @@ var keys = keyMap{
 	NextBackend: key.NewBinding(key.WithKeys("right", "l"), key.WithHelp("→", "apt/snap")),
 	PrevBackend: key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("←", "apt/snap")),
 	Search:      key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
+	Filter:      key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "filter list")),
 	Enter:       key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "details")),
 	Install:     key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "install")),
 	Remove:      key.NewBinding(key.WithKeys("d", "r"), key.WithHelp("d", "remove")),

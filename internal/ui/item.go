@@ -16,7 +16,10 @@ type item struct {
 	p pkg.Package
 }
 
-func (i item) FilterValue() string { return i.p.Name + " " + i.p.Summary }
+// FilterValue is deliberately just the package name, not the summary too:
+// bubbles/list's fuzzy filter matches any ordered subsequence, so pairing it
+// with long free-text descriptions makes almost everything match something.
+func (i item) FilterValue() string { return i.p.Name }
 
 func statusBullet(s pkg.Status) (string, lipgloss.Style) {
 	switch s {
