@@ -1,5 +1,13 @@
 # pkgtui
 
+[![CI](https://github.com/padovanl/pkgtui/actions/workflows/ci.yml/badge.svg)](https://github.com/padovanl/pkgtui/actions/workflows/ci.yml)
+[![Release](https://github.com/padovanl/pkgtui/actions/workflows/release.yml/badge.svg)](https://github.com/padovanl/pkgtui/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/padovanl/pkgtui?sort=semver)](https://github.com/padovanl/pkgtui/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/padovanl/pkgtui/total)](https://github.com/padovanl/pkgtui/releases)
+[![Go Report Card](https://goreportcard.com/badge/github.com/padovanl/pkgtui)](https://goreportcard.com/report/github.com/padovanl/pkgtui)
+[![Go version](https://img.shields.io/github/go-mod/go-version/padovanl/pkgtui)](go.mod)
+[![License: MIT](https://img.shields.io/github/license/padovanl/pkgtui)](LICENSE)
+
 An **htop-style** terminal UI (TUI) to search, install, remove and upgrade
 **apt** and **snap** packages, from a single dashboard, without having to
 remember the syntax of either package manager.
@@ -104,18 +112,16 @@ command line.
 - Linux with `apt`/`dpkg` and/or `snapd` installed (having just one of the
   two is fine: the other tab simply reports "not available").
 - `sudo` configured for the current user, for privileged operations.
+- Go 1.24+ only if building from source.
 
-## Building & packaging (for contributors)
+## Contributing
+
+Pull requests are welcome — please open them against `develop`, not `main`.
 
 The project uses [goreleaser](https://goreleaser.com) to build multi-arch
 binaries and generate the `.deb` (via its built-in nfpm integration), and
 [snapcraft](https://snapcraft.io/docs/snapcraft-overview) for the `.snap`
 (see `snap/snapcraft.yaml`).
-
-Development happens on `develop`; releases are cut from `main`: merge
-`develop` into `main` when it's ready, then tag `main` with `vX.Y.Z` to
-trigger the release workflow (which refuses to run on tags that aren't on
-`main`).
 
 ```bash
 # Local build + .deb, without publishing anything
@@ -125,8 +131,19 @@ goreleaser release --snapshot --clean --skip=publish
 snapcraft pack
 ```
 
-Official releases are built automatically by GitHub Actions on every
-`vX.Y.Z` tag (see `.github/workflows/release.yml`).
+Development happens on `develop`; releases are cut from `main`. Every push
+to either branch runs the [CI workflow](.github/workflows/ci.yml)
+(`gofmt`, `go vet`, `go build`). To ship a release: merge `develop` into
+`main`, then tag `main`:
+
+```bash
+git checkout main && git merge develop && git push origin main
+git tag vX.Y.Z && git push origin vX.Y.Z
+```
+
+That tag triggers the [release workflow](.github/workflows/release.yml),
+which refuses to run on tags that aren't on `main`, then builds and attaches
+the `.deb`, `.snap` and `.tar.gz` to a new GitHub Release.
 
 ## License
 
