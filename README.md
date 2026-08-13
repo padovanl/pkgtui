@@ -153,7 +153,7 @@ under the header and in the `?` help screen:
 | `▲`         | Installed, upgrade available |
 | `▲` (red)   | Installed, security update available |
 | `○`         | Not installed      |
-| `[held]`    | Installed, upgrades blocked (`H` to toggle) |
+| `◆`         | Held: upgrades blocked (`H` to toggle) |
 
 ## Configuration
 
