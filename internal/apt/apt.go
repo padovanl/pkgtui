@@ -3,11 +3,16 @@
 package apt
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/padovanl/pkgtui/internal/pkg"
 )
@@ -32,13 +37,16 @@ func (m *Manager) Available() bool {
 type dpkgEntry struct {
 	Version string
 	SizeKB  int64
+	Held    bool
 }
 
 // parseDpkgQueryOutput parses the output of:
 //
 //	dpkg-query -W -f '${Package}\t${Version}\t${Installed-Size}\t${Status}\n'
 //
-// keeping only packages whose status is "installed".
+// keeping only packages whose status is "installed". dpkg's Status field is
+// "<want> <flag> <status>" (e.g. "install ok installed" or, once held,
+// "hold ok installed"); the want field is what apt-mark hold/unhold flips.
 func parseDpkgQueryOutput(out string) map[string]dpkgEntry {
 	result := make(map[string]dpkgEntry)
 	for _, line := range strings.Split(out, "\n") {
@@ -50,7 +58,8 @@ func parseDpkgQueryOutput(out string) map[string]dpkgEntry {
 			continue
 		}
 		sizeKB, _ := strconv.ParseInt(strings.TrimSpace(parts[2]), 10, 64)
-		result[parts[0]] = dpkgEntry{Version: parts[1], SizeKB: sizeKB}
+		held := strings.HasPrefix(parts[3], "hold ")
+		result[parts[0]] = dpkgEntry{Version: parts[1], SizeKB: sizeKB, Held: held}
 	}
 	return result
 }
@@ -67,18 +76,23 @@ func installedEntries() (map[string]dpkgEntry, error) {
 	return parseDpkgQueryOutput(string(out)), nil
 }
 
-// parseUpgradableOutput parses the output of "apt list --upgradable".
+// parseUpgradableOutput parses the output of "apt list --upgradable". The
+// suite name after the "/" (e.g. "jammy-security") marks security updates.
+// apt (deliberately, per its own docs) has no stable machine-readable
+// output format, and prints a "WARNING: apt does not have a stable CLI
+// interface" banner on stderr that CombinedOutput folds in with the actual
+// listing, so that gets filtered out here too, not just "Listing...".
 func parseUpgradableOutput(out string) []pkg.Package {
 	var results []pkg.Package
 	for _, line := range strings.Split(out, "\n") {
-		if line == "" || strings.HasPrefix(line, "Listing...") {
+		if line == "" || strings.HasPrefix(line, "Listing...") || strings.HasPrefix(line, "WARNING:") {
 			continue
 		}
 		nameRepo, rest, ok := strings.Cut(line, " ")
 		if !ok {
 			continue
 		}
-		name, _, _ := strings.Cut(nameRepo, "/")
+		name, suite, _ := strings.Cut(nameRepo, "/")
 		fields := strings.Fields(rest)
 		version := ""
 		if len(fields) > 0 {
@@ -95,6 +109,7 @@ func parseUpgradableOutput(out string) []pkg.Package {
 			Installed: installedFrom,
 			Source:    "apt",
 			Status:    pkg.StatusUpgradable,
+			Security:  strings.Contains(suite, "security"),
 		})
 	}
 	return results
@@ -138,6 +153,7 @@ func parseSearchOutput(out string, installed map[string]dpkgEntry, upgradable ma
 		if e, ok := installed[p.Name]; ok {
 			p.Installed = e.Version
 			p.Size = e.SizeKB * 1024
+			p.Held = e.Held
 			p.Status = pkg.StatusInstalled
 			if upgradable[p.Name] {
 				p.Status = pkg.StatusUpgradable
@@ -179,6 +195,7 @@ func (m *Manager) ListInstalled() ([]pkg.Package, error) {
 			Name:      name,
 			Installed: e.Version,
 			Size:      e.SizeKB * 1024,
+			Held:      e.Held,
 			Source:    "apt",
 			Status:    pkg.StatusInstalled,
 		}
@@ -330,6 +347,92 @@ func (m *Manager) RemoveManyCmd(names []string) []string {
 	return append([]string{"sudo", "apt-get", "remove", "-y"}, names...)
 }
 
+// HoldCmd pins a package so apt-get upgrade/dist-upgrade skips it.
+func (m *Manager) HoldCmd(name string) []string {
+	return []string{"sudo", "apt-mark", "hold", name}
+}
+
+// UnholdCmd releases a previous hold.
+func (m *Manager) UnholdCmd(name string) []string {
+	return []string{"sudo", "apt-mark", "unhold", name}
+}
+
+// changelogTimeout bounds "apt-get changelog", which fetches over the
+// network and would otherwise hang the UI indefinitely on a bad connection.
+const changelogTimeout = 20 * time.Second
+
+// Changelog fetches a package's changelog from its source repository.
+func (m *Manager) Changelog(name string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), changelogTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "apt-get", "changelog", "--print-uris=false", name).Output()
+	if err != nil {
+		return "", fmt.Errorf("apt-get changelog %s: %w", name, err)
+	}
+	return string(out), nil
+}
+
+// ppaURLRe matches a PPA's deb line, e.g.:
+//
+//	deb https://ppa.launchpadcontent.net/someone/something/ubuntu jammy main
+//	deb http://ppa.launchpad.net/someone/something/ubuntu jammy main
+var ppaURLRe = regexp.MustCompile(`ppa\.launchpad(?:content)?\.net/([^/]+)/([^/]+)/ubuntu`)
+
+// ListPPAs scans /etc/apt/sources.list.d for third-party PPA sources
+// add-apt-repository would have created. Implements pkg.PPAManager.
+func (m *Manager) ListPPAs() ([]pkg.PPA, error) {
+	return listPPAs(), nil
+}
+
+func listPPAs() []pkg.PPA {
+	entries, err := os.ReadDir("/etc/apt/sources.list.d")
+	if err != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var ppas []pkg.PPA
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".list") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join("/etc/apt/sources.list.d", e.Name()))
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			m := ppaURLRe.FindStringSubmatch(line)
+			if m == nil {
+				continue
+			}
+			name := fmt.Sprintf("ppa:%s/%s", m[1], m[2])
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			ppas = append(ppas, pkg.PPA{Name: name, Description: e.Name()})
+		}
+	}
+	sort.Slice(ppas, func(i, j int) bool { return ppas[i].Name < ppas[j].Name })
+	return ppas
+}
+
+// AddPPACmd adds a third-party PPA and refreshes the package index.
+func (m *Manager) AddPPACmd(ppa string) []string {
+	return []string{"sudo", "add-apt-repository", "-y", ppa}
+}
+
+// RemovePPACmd removes a previously added PPA.
+func (m *Manager) RemovePPACmd(ppa pkg.PPA) []string {
+	return []string{"sudo", "add-apt-repository", "--remove", "-y", ppa.Name}
+}
+
 var _ pkg.Manager = (*Manager)(nil)
 var _ pkg.OrphanLister = (*Manager)(nil)
 var _ pkg.BatchManager = (*Manager)(nil)
+var _ pkg.Holder = (*Manager)(nil)
+var _ pkg.Changelogger = (*Manager)(nil)
+var _ pkg.PPAManager = (*Manager)(nil)

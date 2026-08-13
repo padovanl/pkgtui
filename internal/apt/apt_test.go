@@ -26,16 +26,20 @@ func TestParseDpkgQueryOutput(t *testing.T) {
 }
 
 func TestParseUpgradableOutput(t *testing.T) {
-	out := "Listing...\n" +
+	// CombinedOutput folds apt's stderr CLI-stability warning in with the
+	// real listing on stdout; the parser must not treat it as a package.
+	out := "WARNING: apt does not have a stable CLI interface. Use with caution in scripts.\n" +
+		"\n" +
+		"Listing...\n" +
 		"bash/jammy-updates 5.1-6ubuntu1.1 amd64 [upgradable from: 5.1-6ubuntu1]\n" +
-		"nftables/jammy-updates 1.0.2-1ubuntu3 amd64 [upgradable from: 1.0.1-1]\n" +
+		"openssl/jammy-security 3.0.2-0ubuntu1.10 amd64 [upgradable from: 3.0.2-0ubuntu1.9]\n" +
 		"\n"
 
 	got := parseUpgradableOutput(out)
 
 	want := []pkg.Package{
 		{Name: "bash", Version: "5.1-6ubuntu1.1", Installed: "5.1-6ubuntu1", Source: "apt", Status: pkg.StatusUpgradable},
-		{Name: "nftables", Version: "1.0.2-1ubuntu3", Installed: "1.0.1-1", Source: "apt", Status: pkg.StatusUpgradable},
+		{Name: "openssl", Version: "3.0.2-0ubuntu1.10", Installed: "3.0.2-0ubuntu1.9", Source: "apt", Status: pkg.StatusUpgradable, Security: true},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("parseUpgradableOutput() = %#v, want %#v", got, want)

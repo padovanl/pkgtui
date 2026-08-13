@@ -21,6 +21,8 @@ type Package struct {
 	Size      int64 // installed size in bytes, 0 if unknown
 	Status    Status
 	Source    string // "apt" or "snap"
+	Held      bool   // upgrades blocked (apt-mark hold / snap refresh --hold)
+	Security  bool   // upgrade comes from a security repository/origin
 }
 
 // Manager is implemented by each backend (apt, snap).
@@ -80,4 +82,35 @@ type BatchManager interface {
 type ChannelInstaller interface {
 	Channels() []string
 	InstallChannelCmd(name, channel string) []string
+}
+
+// Holder is implemented by backends that can pin a package so it's skipped
+// by upgrades (apt-mark hold). Scoped to apt: snap can hold too, but has no
+// reliable way to report which snaps currently are, which would leave the
+// UI showing a toggle it can't ever show the true state of.
+type Holder interface {
+	HoldCmd(name string) []string
+	UnholdCmd(name string) []string
+}
+
+// Changelogger is implemented by backends that can fetch a package's
+// changelog (apt-get changelog). Network access required; scoped to apt,
+// which has no snap equivalent.
+type Changelogger interface {
+	Changelog(name string) (string, error)
+}
+
+// PPA describes one third-party APT source.
+type PPA struct {
+	Name        string // e.g. "ppa:someone/something"
+	Description string
+}
+
+// PPAManager is implemented by backends with a concept of addable
+// third-party repositories (apt's PPAs via add-apt-repository). Scoped to
+// apt; snap has no equivalent.
+type PPAManager interface {
+	ListPPAs() ([]PPA, error)
+	AddPPACmd(ppa string) []string
+	RemovePPACmd(ppa PPA) []string
 }
