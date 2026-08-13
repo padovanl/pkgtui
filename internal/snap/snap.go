@@ -167,18 +167,18 @@ func (m *Manager) Info(name string) (string, error) {
 }
 
 func (m *Manager) InstallCmd(name string) []string {
-	return []string{"sudo", "snap", "install", name}
+	return pkg.MaybeSudo([]string{"snap", "install", name})
 }
 
 func (m *Manager) RemoveCmd(name string) []string {
-	return []string{"sudo", "snap", "remove", name}
+	return pkg.MaybeSudo([]string{"snap", "remove", name})
 }
 
 func (m *Manager) UpgradeCmd(name string) []string {
 	if name == "" {
-		return []string{"sudo", "snap", "refresh"}
+		return pkg.MaybeSudo([]string{"snap", "refresh"})
 	}
-	return []string{"sudo", "snap", "refresh", name}
+	return pkg.MaybeSudo([]string{"snap", "refresh", name})
 }
 
 func (m *Manager) UpdateCmd() []string {
@@ -187,12 +187,12 @@ func (m *Manager) UpdateCmd() []string {
 
 // InstallManyCmd installs several snaps in one invocation.
 func (m *Manager) InstallManyCmd(names []string) []string {
-	return append([]string{"sudo", "snap", "install"}, names...)
+	return pkg.MaybeSudo(append([]string{"snap", "install"}, names...))
 }
 
 // RemoveManyCmd removes several snaps in one invocation.
 func (m *Manager) RemoveManyCmd(names []string) []string {
-	return append([]string{"sudo", "snap", "remove"}, names...)
+	return pkg.MaybeSudo(append([]string{"snap", "remove"}, names...))
 }
 
 // Channels lists the standard snap risk levels, most to least stable.
@@ -205,7 +205,7 @@ func (m *Manager) InstallChannelCmd(name, channel string) []string {
 	if channel == "" || channel == "stable" {
 		return m.InstallCmd(name)
 	}
-	return []string{"sudo", "snap", "install", "--channel=" + channel, name}
+	return pkg.MaybeSudo([]string{"snap", "install", "--channel=" + channel, name})
 }
 
 var _ pkg.Manager = (*Manager)(nil)

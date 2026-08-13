@@ -52,9 +52,12 @@ remember the syntax of either package manager.
   next launch.
 - **Install/remove/upgrade with confirmation**: every privileged action
   asks for confirmation (`y`/`n`) before running.
-- **Live output**: `apt-get`/`snap` commands run attached to the real
-  terminal (including the `sudo` password prompt), so you see exactly
-  what's happening, just like from the command line.
+- **Live output, without losing the app**: `apt-get`/`snap` commands run
+  in a real pseudo-terminal shown in a bordered box inside pkgtui — you
+  still get the genuine `sudo` password prompt and any interactive
+  dpkg/debconf dialog, but the screen doesn't get handed over. The view
+  stays up after the command finishes (green border on success, red on
+  failure) until you press a key, so you can actually read the result.
 - **Mouse support**: click a tab to switch backend, click a row to select
   it, scroll to navigate.
 
@@ -139,10 +142,14 @@ pkgtui
 All key bindings above except navigation and the y/n/esc confirm keys can be
 remapped from the settings screen (`,`).
 
-Actions that change the system (install, remove, upgrade) run with `sudo`:
-pkgtui hands control of the terminal to the real command, so you'll see any
-password prompt and `apt`/`snap` output exactly as you would from the
-command line.
+Actions that change the system (install, remove, upgrade) run with `sudo`
+(skipped automatically if you're already root, e.g. inside a container)
+attached to a real pseudo-terminal, shown live in a box inside pkgtui.
+Keystrokes go straight to the command, so the password prompt and any
+interactive dpkg/debconf dialog work exactly as they would from the
+command line — `ctrl+c` interrupts the running command rather than
+pkgtui itself. The view stays open after the command finishes so you can
+read the result; press any key to return.
 
 Every package row starts with a status symbol, also shown as a legend right
 under the header and in the `?` help screen:

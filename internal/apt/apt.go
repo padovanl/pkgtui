@@ -319,42 +319,42 @@ func (m *Manager) Info(name string) (string, error) {
 }
 
 func (m *Manager) InstallCmd(name string) []string {
-	return []string{"sudo", "apt-get", "install", "-y", name}
+	return pkg.MaybeSudo([]string{"apt-get", "install", "-y", name})
 }
 
 func (m *Manager) RemoveCmd(name string) []string {
-	return []string{"sudo", "apt-get", "remove", "-y", name}
+	return pkg.MaybeSudo([]string{"apt-get", "remove", "-y", name})
 }
 
 func (m *Manager) UpgradeCmd(name string) []string {
 	if name == "" {
-		return []string{"sudo", "apt-get", "upgrade", "-y"}
+		return pkg.MaybeSudo([]string{"apt-get", "upgrade", "-y"})
 	}
-	return []string{"sudo", "apt-get", "install", "--only-upgrade", "-y", name}
+	return pkg.MaybeSudo([]string{"apt-get", "install", "--only-upgrade", "-y", name})
 }
 
 func (m *Manager) UpdateCmd() []string {
-	return []string{"sudo", "apt-get", "update"}
+	return pkg.MaybeSudo([]string{"apt-get", "update"})
 }
 
 // InstallManyCmd installs several packages in one apt-get invocation.
 func (m *Manager) InstallManyCmd(names []string) []string {
-	return append([]string{"sudo", "apt-get", "install", "-y"}, names...)
+	return pkg.MaybeSudo(append([]string{"apt-get", "install", "-y"}, names...))
 }
 
 // RemoveManyCmd removes several packages in one apt-get invocation.
 func (m *Manager) RemoveManyCmd(names []string) []string {
-	return append([]string{"sudo", "apt-get", "remove", "-y"}, names...)
+	return pkg.MaybeSudo(append([]string{"apt-get", "remove", "-y"}, names...))
 }
 
 // HoldCmd pins a package so apt-get upgrade/dist-upgrade skips it.
 func (m *Manager) HoldCmd(name string) []string {
-	return []string{"sudo", "apt-mark", "hold", name}
+	return pkg.MaybeSudo([]string{"apt-mark", "hold", name})
 }
 
 // UnholdCmd releases a previous hold.
 func (m *Manager) UnholdCmd(name string) []string {
-	return []string{"sudo", "apt-mark", "unhold", name}
+	return pkg.MaybeSudo([]string{"apt-mark", "unhold", name})
 }
 
 // changelogTimeout bounds "apt-get changelog", which fetches over the
@@ -422,12 +422,12 @@ func listPPAs() []pkg.PPA {
 
 // AddPPACmd adds a third-party PPA and refreshes the package index.
 func (m *Manager) AddPPACmd(ppa string) []string {
-	return []string{"sudo", "add-apt-repository", "-y", ppa}
+	return pkg.MaybeSudo([]string{"add-apt-repository", "-y", ppa})
 }
 
 // RemovePPACmd removes a previously added PPA.
 func (m *Manager) RemovePPACmd(ppa pkg.PPA) []string {
-	return []string{"sudo", "add-apt-repository", "--remove", "-y", ppa.Name}
+	return pkg.MaybeSudo([]string{"add-apt-repository", "--remove", "-y", ppa.Name})
 }
 
 var _ pkg.Manager = (*Manager)(nil)

@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"os/exec"
 	"sort"
 	"strings"
 
@@ -47,6 +46,7 @@ const (
 	screenHelp
 	screenChangelog
 	screenPPA
+	screenRunning
 )
 
 // pendingAction holds a destructive/privileged action awaiting user
@@ -137,13 +137,6 @@ type ppaListResultMsg struct {
 
 func (m ppaListResultMsg) Backend() string { return m.backend }
 
-type actionDoneMsg struct {
-	backend string
-	err     error
-}
-
-func (m actionDoneMsg) Backend() string { return m.backend }
-
 // Panel is the self-contained UI + state for a single package manager
 // backend (apt or snap).
 type Panel struct {
@@ -174,7 +167,8 @@ type Panel struct {
 	tagged     map[string]bool
 
 	awaitingUpgradeAllConfirm bool
-	returnScreen              screen // where actionDoneMsg sends us back to
+	returnScreen              screen // where finishing an action sends us back to
+	running                   *runningProcess
 
 	upgradableCount    int // -1 = not yet known
 	orphanedCount      int // -1 = not yet known
@@ -263,7 +257,7 @@ func (p *Panel) Backend() string { return p.mgr.Name() }
 // currently owns keyboard input, so the root App knows not to steal
 // single-letter shortcuts (including "q") meant to be typed as text.
 func (p *Panel) IsTyping() bool {
-	return p.search.Focused() || p.list.FilterState() == list.Filtering
+	return p.search.Focused() || p.list.FilterState() == list.Filtering || p.screen == screenRunning
 }
 
 // ModeName and SetInitialMode round-trip the current view through config's
@@ -416,6 +410,9 @@ func (p *Panel) setSize(w, h int) {
 	p.viewport.Width = w - 4
 	p.viewport.Height = h - 4
 	p.search.Width = w - 8
+	if p.running != nil {
+		p.running.resize(p.viewport.Width, p.viewport.Height)
+	}
 }
 
 // maybeShowStartupSummary sets the initial status line to a one-time
@@ -531,22 +528,54 @@ func (p *Panel) Update(msg tea.Msg) (*Panel, tea.Cmd) {
 			}
 		}
 		return p, nil
-	case actionDoneMsg:
-		p.actionRunning = false
-		p.tagged = nil
-		p.refreshDelegate()
+	case ptyStartedMsg:
 		if msg.err != nil {
+			p.actionRunning = false
+			p.screen = p.returnScreen
 			p.statusMsg = errorStyle.Render("Error: " + msg.err.Error())
+			return p, nil
+		}
+		p.running = msg.proc
+		p.running.resize(p.viewport.Width, p.viewport.Height)
+		p.viewport.SetContent("")
+		return p, tea.Batch(readPTYCmd(p.running), waitPTYCmd(p.running))
+
+	case ptyOutputMsg:
+		if p.running == nil || msg.proc != p.running {
+			return p, nil // stale read from a process we've already moved past
+		}
+		if len(msg.data) > 0 {
+			p.running.buf.Write(msg.data)
+			p.viewport.SetContent(p.running.buf.String())
+			p.viewport.GotoBottom()
+		}
+		if msg.err != nil {
+			// Read loop stops here (EOF once the child closes its pty side);
+			// ptyExitMsg carries the actual success/failure and does the
+			// screen transition once cmd.Wait() also returns.
+			return p, nil
+		}
+		return p, readPTYCmd(p.running)
+
+	case ptyExitMsg:
+		if p.running == nil || msg.proc != p.running {
+			return p, nil
+		}
+		// Leave the output on screen instead of immediately clearing it:
+		// with tea.ExecProcess this used to hand the terminal straight
+		// back, so any final lines (or an error) flashed by unread. Now
+		// we just mark it finished; handleKey's screenRunning branch
+		// dismisses it on the next keypress instead of forwarding one.
+		p.running.exited = true
+		p.running.exitErr = msg.err
+		if msg.err != nil {
+			p.running.buf.Write([]byte("\n--- Failed: " + msg.err.Error() + " ---\n"))
 		} else {
-			p.statusMsg = "Done."
+			p.running.buf.Write([]byte("\n--- Done — press any key to continue ---\n"))
 		}
-		p.loading = true
-		if p.returnScreen == screenPPA {
-			p.screen = screenPPA
-			return p, tea.Batch(p.loadPPAsCmd(), p.spinner.Tick)
-		}
-		p.screen = screenList
-		return p, tea.Batch(p.refreshCmd(), p.spinner.Tick)
+		p.viewport.SetContent(p.running.buf.String())
+		p.viewport.GotoBottom()
+		return p, nil
 	case spinner.TickMsg:
 		if !p.loading {
 			// Without this, the spinner reschedules itself forever: once
@@ -577,6 +606,12 @@ func (p *Panel) handleMouse(msg tea.MouseMsg) (*Panel, tea.Cmd) {
 		var cmd tea.Cmd
 		p.viewport, cmd = p.viewport.Update(msg)
 		return p, cmd
+	}
+	if p.screen == screenRunning {
+		if p.running != nil && p.running.exited && msg.Action == tea.MouseActionPress {
+			return p.dismissRunning()
+		}
+		return p, nil
 	}
 	if p.screen == screenPPA {
 		if msg.Action != tea.MouseActionPress {
@@ -615,6 +650,24 @@ func (p *Panel) handleMouse(msg tea.MouseMsg) (*Panel, tea.Cmd) {
 }
 
 func (p *Panel) handleKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
+	if p.screen == screenRunning {
+		if p.running != nil && p.running.exited {
+			// The command finished; wait for an explicit keypress instead
+			// of auto-returning, so the final output (or an error) isn't
+			// gone before it's been read.
+			return p.dismissRunning()
+		}
+		// Full passthrough: sudo's password prompt, a debconf dialog, or
+		// just apt asking "continue? [Y/n]" all need real keystrokes, not
+		// our own shortcuts. Nothing here is treated as a pkgtui shortcut.
+		if p.running != nil {
+			if b := keyMsgToBytes(msg); b != nil {
+				_, _ = p.running.ptmx.Write(b)
+			}
+		}
+		return p, nil
+	}
+
 	if p.screen == screenConfirm {
 		switch {
 		case key.Matches(msg, keys.Confirm):
@@ -1127,16 +1180,36 @@ func (p *Panel) SupportsSync() bool { return p.mgr.UpdateCmd() != nil }
 func (p *Panel) executeConfirmedAction() (*Panel, tea.Cmd) {
 	pending := p.pending
 	p.pending = nil
-	p.screen = p.returnScreen
 	if pending == nil || len(pending.argv) == 0 {
+		p.screen = p.returnScreen
 		return p, nil
 	}
 	p.actionRunning = true
-	mgr := p.mgr
-	c := exec.Command(pending.argv[0], pending.argv[1:]...)
-	return p, tea.ExecProcess(c, func(err error) tea.Msg {
-		return actionDoneMsg{backend: mgr.Name(), err: err}
-	})
+	p.screen = screenRunning
+	return p, startPTYCmd(p.mgr.Name(), pending.argv)
+}
+
+// dismissRunning leaves the live-output screen after the command has
+// finished, refreshing whatever list/PPA view we came from.
+func (p *Panel) dismissRunning() (*Panel, tea.Cmd) {
+	exitErr := p.running.exitErr
+	p.running.close()
+	p.running = nil
+	p.actionRunning = false
+	p.tagged = nil
+	p.refreshDelegate()
+	if exitErr != nil {
+		p.statusMsg = errorStyle.Render("Error: " + exitErr.Error())
+	} else {
+		p.statusMsg = "Done."
+	}
+	p.loading = true
+	if p.returnScreen == screenPPA {
+		p.screen = screenPPA
+		return p, tea.Batch(p.loadPPAsCmd(), p.spinner.Tick)
+	}
+	p.screen = screenList
+	return p, tea.Batch(p.refreshCmd(), p.spinner.Tick)
 }
 
 func (p *Panel) renderHeader() string {
@@ -1171,6 +1244,10 @@ func (p *Panel) View() string {
 			detailBoxStyle.Width(maxInt(p.width-4, 10)).Render(p.viewport.View()),
 			dimStyle.Render("esc/enter: back   ↑/↓: scroll"),
 		)
+	}
+
+	if p.screen == screenRunning {
+		return p.renderRunning()
 	}
 
 	if p.screen == screenHelp {
@@ -1252,6 +1329,32 @@ func (p *Panel) renderPPA() string {
 	sections = append(sections, dimStyle.Render("a: add   d: remove selected   esc: back"))
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+}
+
+func (p *Panel) renderRunning() string {
+	cmdLine := ""
+	hint := "live output — keystrokes go to the command (e.g. the sudo password); ctrl+c interrupts it"
+	status := " — running "
+	box := detailBoxStyle
+	if p.running != nil {
+		cmdLine = strings.Join(p.running.argv, " ")
+		if p.running.exited {
+			hint = "press any key to continue"
+			if p.running.exitErr != nil {
+				status = " — failed "
+				box = box.BorderForeground(colorDanger)
+			} else {
+				status = " — done "
+				box = box.BorderForeground(colorAccent)
+			}
+		}
+	}
+	return lipgloss.JoinVertical(lipgloss.Left,
+		titleStyle.Render(fmt.Sprintf(" %s%s", strings.ToUpper(p.mgr.Name()), status)),
+		dimStyle.Render(" $ "+cmdLine),
+		box.Width(maxInt(p.width-4, 10)).Render(p.viewport.View()),
+		dimStyle.Render(hint),
+	)
 }
 
 func (p *Panel) renderHelp() string {

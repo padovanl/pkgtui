@@ -3,6 +3,24 @@
 // uniformly.
 package pkg
 
+import "os"
+
+// geteuid is a variable (not a direct os.Geteuid call) so tests can swap it
+// out without needing to actually run as root.
+var geteuid = os.Geteuid
+
+// MaybeSudo prefixes argv with "sudo" unless we're already running as root
+// (Geteuid() == 0) — common inside containers, which frequently run as
+// root and often don't even have a "sudo" binary installed, so always
+// prepending it would make every privileged action fail with a plain
+// "command not found" instead of just... not needing it.
+func MaybeSudo(argv []string) []string {
+	if geteuid() == 0 {
+		return argv
+	}
+	return append([]string{"sudo"}, argv...)
+}
+
 // Status describes a package's relationship to the local system.
 type Status int
 

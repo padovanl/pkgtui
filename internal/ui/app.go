@@ -105,7 +105,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, keys.Quit) && !a.activePanel().IsTyping():
 			return a.quit()
-		case msg.String() == "ctrl+c":
+		case msg.String() == "ctrl+c" && !a.activePanel().IsTyping():
 			return a.quit()
 		case key.Matches(msg, keys.Settings) && !a.activePanel().IsTyping():
 			a.settings = newSettingsScreen()
@@ -230,6 +230,17 @@ func (a *App) View() string {
 		)
 	}
 	body := a.activePanel().View()
+	if a.activePanel().screen == screenRunning {
+		// The global hint bar advertises keys (tab, search, install, q to
+		// quit...) that don't apply here: every keystroke instead goes to
+		// the running child process. renderRunning already carries its own
+		// context-appropriate hint line, so showing it too would just be
+		// redundant and, for "q quit", actively misleading.
+		return lipgloss.JoinVertical(lipgloss.Left,
+			a.renderTabBar(),
+			body,
+		)
+	}
 	return lipgloss.JoinVertical(lipgloss.Left,
 		a.renderTabBar(),
 		body,
