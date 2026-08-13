@@ -758,6 +758,11 @@ func (p *Panel) handleKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
 	case key.Matches(msg, keys.Search):
 		p.mode = viewSearch
 		p.search.Focus()
+		// The search box adds 3 rows; without recomputing the list's
+		// height budget here, it stays sized for the previous mode and
+		// overflows the terminal by those 3 rows, scrolling the header
+		// (tab bar, title, legend) off the top of the screen.
+		p.setSize(p.width, p.height)
 		return p, textinput.Blink
 	case key.Matches(msg, keys.Filter):
 		var cmd tea.Cmd
