@@ -134,16 +134,19 @@ snapcraft pack
 Development happens on `develop`; releases are cut from `main`. Every push
 to either branch runs the [CI workflow](.github/workflows/ci.yml)
 (`gofmt`, `go vet`, `go build`). To ship a release: merge `develop` into
-`main`, then tag `main`:
+`main`, then run:
 
 ```bash
 git checkout main && git merge develop && git push origin main
-git tag vX.Y.Z && git push origin vX.Y.Z
+scripts/release.sh vX.Y.Z
 ```
 
-That tag triggers the [release workflow](.github/workflows/release.yml),
-which refuses to run on tags that aren't on `main`, then builds and attaches
-the `.deb`, `.snap` and `.tar.gz` to a new GitHub Release.
+`scripts/release.sh` refuses to run unless you're on `main`, the working
+tree is clean, local `main` matches `origin/main`, and the tag doesn't
+already exist locally or on the remote — then it tags and pushes. That
+push triggers the [release workflow](.github/workflows/release.yml), which
+independently re-checks the tag is on `main`, then builds and attaches the
+`.deb`, `.snap` and `.tar.gz` to a new GitHub Release.
 
 ## License
 
