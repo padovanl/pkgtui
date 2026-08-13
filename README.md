@@ -32,13 +32,29 @@ remember the syntax of either package manager.
   batch action.
 - **Channel picker**: install a snap from `stable`, `candidate`, `beta` or
   `edge` instead of always defaulting to stable.
+- **Hold/pin (apt)**: block a package from being touched by upgrades
+  (`apt-mark hold`), with held packages marked `[held]` in the list.
+- **Security updates called out**: upgradable packages coming from a
+  `-security` repo get a distinct red marker, and the upgrade-all
+  confirmation counts them separately.
+- **Upgrade all, with a preview**: `U` fetches and shows exactly which
+  packages will change before you confirm, instead of a blind "upgrade
+  everything?".
+- **Changelog viewer (apt)**: see what actually changed in a package
+  before upgrading it (`apt-get changelog`).
+- **PPA management (apt)**: list, add and remove third-party repositories
+  from inside the TUI, gated behind an explicit warning since a bad PPA
+  can break `apt update` for the whole system.
+- **Settings screen**: cycle between built-in color themes and rebind any
+  action key, live, from inside the app — no config file editing required
+  (though it's saved to one).
+- **Remembers where you left off**: backend and view are restored on the
+  next launch.
 - **Install/remove/upgrade with confirmation**: every privileged action
   asks for confirmation (`y`/`n`) before running.
 - **Live output**: `apt-get`/`snap` commands run attached to the real
   terminal (including the `sudo` password prompt), so you see exactly
   what's happening, just like from the command line.
-- **Upgrade all**: one key to run `apt-get upgrade` or `snap refresh` on
-  every package of the active backend.
 - **Mouse support**: click a tab to switch backend, click a row to select
   it, scroll to navigate.
 
@@ -106,16 +122,22 @@ pkgtui
 | `i`         | Install the selected package, or all tagged packages |
 | `d`         | Remove the selected package, or all tagged packages |
 | `u`         | Upgrade the selected package                |
-| `U`         | Upgrade **all** packages on the active backend |
+| `U`         | Upgrade **all** packages (shows what will change first) |
 | `S`         | Sort the current view by installed size     |
 | `c`         | Cycle the install channel (while confirming a snap install) |
+| `H`         | Hold/unhold the selected package (apt)      |
+| `C`         | View the selected package's changelog (apt) |
+| `P`         | Manage third-party repositories / PPAs (apt) |
 | `s`         | Sync the cache (`apt-get update`; no-op on snap) |
 | `y` / `n`   | Confirm / cancel an action                  |
 | `esc`       | Go back                                     |
+| `,`         | Open settings (theme, keybindings)          |
 | `?`         | Toggle the in-app help screen (full keybinding list) |
 | `q`         | Quit                                        |
 
 \* Orphaned only appears for apt: packages `apt-get autoremove` would clean up.
+All key bindings above except navigation and the y/n/esc confirm keys can be
+remapped from the settings screen (`,`).
 
 Actions that change the system (install, remove, upgrade) run with `sudo`:
 pkgtui hands control of the terminal to the real command, so you'll see any
@@ -125,11 +147,19 @@ command line.
 Every package row starts with a status symbol, also shown as a legend right
 under the header and in the `?` help screen:
 
-| Symbol | Meaning           |
-| :----: | ----------------- |
-| `●`    | Installed          |
-| `▲`    | Installed, upgrade available |
-| `○`    | Not installed      |
+| Symbol      | Meaning           |
+| :---------: | ----------------- |
+| `●`         | Installed          |
+| `▲`         | Installed, upgrade available |
+| `▲` (red)   | Installed, security update available |
+| `○`         | Not installed      |
+| `[held]`    | Installed, upgrades blocked (`H` to toggle) |
+
+## Configuration
+
+Settings (theme, rebound keys) and the last-used view live in
+`~/.config/pkgtui/config.json`, written by the settings screen (`,`) — there's
+normally no need to edit it by hand, but it's plain JSON if you want to.
 
 ## Requirements
 
