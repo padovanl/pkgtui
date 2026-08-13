@@ -196,6 +196,12 @@ normally no need to edit it by hand, but it's plain JSON if you want to.
   already installed or upgradable works fully offline. pkgtui makes no
   network calls of its own; this is exactly the same requirement `apt`
   and `snap` have on their own.
+- A terminal that reports 256-color or truecolor support. A bare
+  `TERM=xterm` (no `-256color` suffix) gets detected as a 16-color
+  terminal, which downsamples every theme's colors to the nearest basic
+  ANSI color and can make some of them hard to tell apart. Minimal
+  Docker/SSH sessions are the usual culprit — `export TERM=xterm-256color`
+  (or `COLORTERM=truecolor` if the real terminal supports it) fixes it.
 
 ## 🤝 Contributing
 
