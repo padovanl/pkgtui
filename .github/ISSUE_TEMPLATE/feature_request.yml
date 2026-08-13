@@ -1,0 +1,29 @@
+name: Feature request
+description: Suggest something pkgtui should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: The underlying need, not just the feature — helps find a better fix if one exists.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed feature
+    validations:
+      required: true
+
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Which backend does this apply to?
+      options:
+        - apt
+        - snap
+        - both / neither (general TUI feature)
+    validations:
+      required: true

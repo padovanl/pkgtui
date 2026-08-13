@@ -1,0 +1,34 @@
+name: Bug report
+description: Something in pkgtui doesn't work as expected
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: pkgtui version
+      description: Output of `pkgtui --version`
+      placeholder: "0.1.1"
+    validations:
+      required: true
+
+  - type: input
+    id: distro
+    attributes:
+      label: Distro / install method
+      placeholder: "Ubuntu 22.04, installed via .deb"
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what happened instead. Exact keys pressed help a lot for TUI bugs.
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Terminal emulator, screenshot, relevant apt/snap output, etc.
