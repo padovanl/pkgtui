@@ -148,19 +148,32 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 	var line string
 	if selected {
-		// One single styled span for the whole row: a per-segment colored
-		// bullet/tag-mark (see the else branch) each carries their own
-		// ANSI reset, which would cut the background highlight off right
-		// after the bullet instead of covering the full row width.
+		// The status bullet keeps its own color (green/yellow/red/muted)
+		// even on the highlighted row, instead of blending into the row's
+		// uniform badge-text color: it's the one signal that survives a
+		// quick glance down a list where every other row is unselected.
+		// Everything else is still one flat badge-text-on-highlight color,
+		// same reasoning as before (per-segment ANSI resets would each cut
+		// the shared background short) — just applied to fewer segments,
+		// and with manual padding instead of a Style.Width() wrap so nothing
+		// re-wraps already-colored text.
 		mark := "  "
 		if tagged {
 			mark = "✓ "
 		}
-		plain := fmt.Sprintf("%s%s %-*s %-*s %s%s", mark, bullet, nameW, name, versionW, version, it.p.Summary, held)
-		if maxW := m.Width() - 2; maxW > 0 && lipgloss.Width(plain) > maxW {
-			plain = truncateANSI(plain, maxW)
+		prefix := mark + bullet
+		prefixW := lipgloss.Width(prefix)
+		rest := fmt.Sprintf(" %-*s %-*s %s%s", nameW, name, versionW, version, it.p.Summary, held)
+		maxW := maxInt(m.Width()-2, 0)
+		restMaxW := maxInt(maxW-prefixW, 0)
+		if lipgloss.Width(rest) > restMaxW {
+			rest = truncateANSI(rest, restMaxW)
+		} else if pad := restMaxW - lipgloss.Width(rest); pad > 0 {
+			rest += strings.Repeat(" ", pad)
 		}
-		line = selectedRowStyle.Width(maxInt(m.Width()-2, 0)).Render(plain)
+		bg := lipgloss.NewStyle().Background(colorHighlight)
+		textStyle := bg.Foreground(colorBadgeText).Bold(true)
+		line = textStyle.Render(mark) + bulletStyle.Background(colorHighlight).Bold(true).Render(bullet) + textStyle.Render(rest)
 	} else {
 		mark := "  "
 		if tagged {

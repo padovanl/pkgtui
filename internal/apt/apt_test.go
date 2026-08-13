@@ -35,10 +35,10 @@ func TestParseUpgradableOutput(t *testing.T) {
 		"openssl/jammy-security 3.0.2-0ubuntu1.10 amd64 [upgradable from: 3.0.2-0ubuntu1.9]\n" +
 		"\n"
 
-	got := parseUpgradableOutput(out)
+	got := parseUpgradableOutput(out, map[string]bool{"bash": true})
 
 	want := []pkg.Package{
-		{Name: "bash", Version: "5.1-6ubuntu1.1", Installed: "5.1-6ubuntu1", Source: "apt", Status: pkg.StatusUpgradable},
+		{Name: "bash", Version: "5.1-6ubuntu1.1", Installed: "5.1-6ubuntu1", Source: "apt", Status: pkg.StatusUpgradable, Held: true},
 		{Name: "openssl", Version: "3.0.2-0ubuntu1.10", Installed: "3.0.2-0ubuntu1.9", Source: "apt", Status: pkg.StatusUpgradable, Security: true},
 	}
 	if !reflect.DeepEqual(got, want) {
