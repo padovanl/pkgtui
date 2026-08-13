@@ -19,6 +19,8 @@ remember the syntax of either package manager.
 
 ## ✨ Features
 
+### 🔍 Browse & search
+
 - **Two separate backends**: dedicated tabs for `apt` and `snap`, each with
   its own state (the two worlds are never mixed together).
 - **Live search**: search packages by name/description (`apt-cache search`
@@ -32,30 +34,11 @@ remember the syntax of either package manager.
   *reverse* dependencies, so you know what else relies on a package before
   you remove it — or publisher/channels for snap.
 - **Sort by installed size**: find what's actually eating your disk.
-- **Multi-select**: tag several packages and install/remove them in one
-  batch action.
-- **Channel picker**: install a snap from `stable`, `candidate`, `beta` or
-  `edge` instead of always defaulting to stable.
-- **Hold/pin (apt)**: block a package from being touched by upgrades
-  (`apt-mark hold`), with held packages marked `[held]` in the list.
-- **Security updates called out**: upgradable packages coming from a
-  `-security` repo get a distinct red marker, and the upgrade-all
-  confirmation counts them separately.
-- **Upgrade all, with a preview**: `U` fetches and shows exactly which
-  packages will change before you confirm, instead of a blind "upgrade
-  everything?".
-- **Changelog viewer (apt)**: see what actually changed in a package
-  before upgrading it (`apt-get changelog`).
-- **PPA management (apt)**: list, add and remove third-party repositories
-  from inside the TUI, gated behind an explicit warning since a bad PPA
-  can break `apt update` for the whole system.
-- **Settings screen**: browse the 5 built-in color themes with `←`/`→`
-  (the whole UI re-skins live as you move, no need to commit to one to see
-  it) and rebind any action key, live, from inside the app — no config
-  file editing required
-  (though it's saved to one).
-- **Remembers where you left off**: backend and view are restored on the
-  next launch.
+- **Mouse support**: click a tab to switch backend, click a row to select
+  it, scroll to navigate.
+
+### ⚡ Act on packages
+
 - **Install/remove/upgrade with confirmation**: every privileged action
   asks for confirmation (`y`/`n`) before running.
 - **Live output, without losing the app**: `apt-get`/`snap` commands run
@@ -64,8 +47,35 @@ remember the syntax of either package manager.
   dpkg/debconf dialog, but the screen doesn't get handed over. The view
   stays up after the command finishes (green border on success, red on
   failure) until you press a key, so you can actually read the result.
-- **Mouse support**: click a tab to switch backend, click a row to select
-  it, scroll to navigate.
+- **Multi-select**: tag several packages and install/remove them in one
+  batch action.
+- **Upgrade all, with a preview**: `U` fetches and shows exactly which
+  packages will change before you confirm, instead of a blind "upgrade
+  everything?".
+- **Security updates called out**: upgradable packages coming from a
+  `-security` repo get a distinct red marker, and the upgrade-all
+  confirmation counts them separately.
+- **Channel picker**: install a snap from `stable`, `candidate`, `beta` or
+  `edge` instead of always defaulting to stable.
+- **Hold/pin (apt)**: block a package from being touched by upgrades
+  (`apt-mark hold`), with held packages marked `[held]` in the list.
+- **Changelog viewer (apt)**: see what actually changed in a package
+  before upgrading it (`apt-get changelog`).
+- **PPA management (apt)**: list, add and remove third-party repositories
+  from inside the TUI, gated behind an explicit warning since a bad PPA
+  can break `apt update` for the whole system.
+
+### 🎨 Make it yours
+
+- **11 built-in color themes**: from classic terminal looks (Dracula,
+  Nord, Solarized, Gruvbox) to Catppuccin, Tokyo Night, Monokai, Darcula,
+  VS Code Dark+ and Ubuntu's own palette. Browse them with `←`/`→` in the
+  settings screen — the whole UI re-skins live as you move, no need to
+  commit to one just to see it.
+- **Rebind any action key**, live, from inside the app — no config file
+  editing required (though it's saved to one).
+- **Remembers where you left off**: backend and view are restored on the
+  next launch.
 
 ## 📥 Installation
 

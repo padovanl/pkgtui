@@ -23,6 +23,9 @@ PALETTES = {
     "catppuccin":  dict(fg="189", accent="151", warn="223", danger="210", muted="245", highlight="183"),
     "tokyo-night": dict(fg="195", accent="149", warn="179", danger="204", muted="245", highlight="111"),
     "monokai":     dict(fg="255", accent="154", warn="221", danger="197", muted="245", highlight="80"),
+    "darcula":     dict(fg="250", accent="107", warn="215", danger="173", muted="245", highlight="74"),
+    "vscode":      dict(fg="254", accent="78",  warn="178", danger="174", muted="245", highlight="33"),
+    "ubuntu":      dict(fg="231", accent="64",  warn="100", danger="203", muted="245", highlight="166"),
 }
 BADGE_TEXT = "0"     # colorBadgeText: text on accent/highlight/danger badges
 TERMINAL_BG = "235"  # stand-in for a typical dark terminal background
