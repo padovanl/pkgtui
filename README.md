@@ -46,10 +46,17 @@ remember the syntax of either package manager.
 No verification/store required: grab the asset from the [releases
 page](https://github.com/padovanl/pkgtui/releases) and install it locally.
 
+Below, `<version>` means the release number **without** a leading `v` (a
+`v0.1.1` tag produces `pkgtui_0.1.1_amd64.deb`, not `pkgtui_v0.1.1_amd64.deb`)
+— check the exact asset names on the [latest
+release](https://github.com/padovanl/pkgtui/releases/latest) rather than
+guessing. The commands use `-f` so curl fails loudly on a wrong URL instead
+of silently saving GitHub's "not found" page as if it were the package.
+
 ### `.deb` package (Debian/Ubuntu and derivatives)
 
 ```bash
-curl -LO https://github.com/padovanl/pkgtui/releases/latest/download/pkgtui_<version>_amd64.deb
+curl -fLO https://github.com/padovanl/pkgtui/releases/latest/download/pkgtui_<version>_amd64.deb
 sudo apt install ./pkgtui_<version>_amd64.deb
 ```
 
@@ -59,14 +66,14 @@ sudo apt install ./pkgtui_<version>_amd64.deb
 uses `classic` confinement:
 
 ```bash
-curl -LO https://github.com/padovanl/pkgtui/releases/latest/download/pkgtui_<version>_amd64.snap
+curl -fLO https://github.com/padovanl/pkgtui/releases/latest/download/pkgtui_<version>_amd64.snap
 sudo snap install --dangerous --classic pkgtui_<version>_amd64.snap
 ```
 
 ### Standalone binary (any Linux distro with apt and/or snap)
 
 ```bash
-curl -LO https://github.com/padovanl/pkgtui/releases/latest/download/pkgtui_<version>_linux_amd64.tar.gz
+curl -fLO https://github.com/padovanl/pkgtui/releases/latest/download/pkgtui_<version>_linux_amd64.tar.gz
 tar -xzf pkgtui_<version>_linux_amd64.tar.gz
 sudo mv pkgtui /usr/local/bin/
 ```
