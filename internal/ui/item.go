@@ -96,6 +96,9 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		return
 	}
 	bullet, bulletStyle := statusBullet(it.p.Status)
+	if it.p.Security && it.p.Status == pkg.StatusUpgradable {
+		bulletStyle = securityMarkStyle
+	}
 
 	mark := "  "
 	if d.tagged[it.p.Name] {
@@ -131,6 +134,9 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		versionW, version,
 		summary,
 	)
+	if it.p.Held {
+		line += heldMarkStyle.Render(" [held]")
+	}
 
 	maxW := m.Width() - 2
 	if maxW > 0 && lipgloss.Width(line) > maxW {

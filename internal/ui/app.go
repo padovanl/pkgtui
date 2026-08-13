@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/padovanl/pkgtui/internal/apt"
+	"github.com/padovanl/pkgtui/internal/config"
 	"github.com/padovanl/pkgtui/internal/snap"
 )
 
@@ -15,16 +16,34 @@ type App struct {
 	panels []*Panel
 	active int
 
+	settings *settingsScreen // nil unless the settings overlay is open
+
 	width, height int
 }
 
 func NewApp() *App {
-	return &App{
-		panels: []*Panel{
-			NewPanel(apt.New()),
-			NewPanel(snap.New()),
-		},
+	cfg, _ := config.Load()
+	if cfg.Theme != "" {
+		ApplyTheme(cfg.Theme)
 	}
+	if len(cfg.Keybindings) > 0 {
+		ApplyKeybindingOverrides(cfg.Keybindings)
+	}
+
+	aptPanel := NewPanel(apt.New())
+	snapPanel := NewPanel(snap.New())
+	if v, ok := cfg.LastView["apt"]; ok {
+		aptPanel.SetInitialMode(v)
+	}
+	if v, ok := cfg.LastView["snap"]; ok {
+		snapPanel.SetInitialMode(v)
+	}
+
+	a := &App{panels: []*Panel{aptPanel, snapPanel}}
+	if cfg.LastBackend == "snap" {
+		a.active = 1
+	}
+	return a
 }
 
 func (a *App) Init() tea.Cmd {
@@ -38,6 +57,24 @@ func (a *App) Init() tea.Cmd {
 }
 
 func (a *App) activePanel() *Panel { return a.panels[a.active] }
+
+// saveViewState persists which backend/view was active, for next launch.
+func (a *App) saveViewState() {
+	c, _ := config.Load()
+	c.LastBackend = a.activePanel().Backend()
+	if c.LastView == nil {
+		c.LastView = map[string]string{}
+	}
+	for _, p := range a.panels {
+		c.LastView[p.Backend()] = p.ModeName()
+	}
+	_ = c.Save()
+}
+
+func (a *App) quit() (tea.Model, tea.Cmd) {
+	a.saveViewState()
+	return a, tea.Quit
+}
 
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -53,11 +90,26 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tea.KeyMsg:
+		if a.settings != nil {
+			if changed := a.settings.handleKey(msg); changed {
+				saveSettings()
+				for _, p := range a.panels {
+					p.ApplySettingsChange()
+				}
+			}
+			if !a.settings.capturing && key.Matches(msg, keys.Escape) {
+				a.settings = nil
+			}
+			return a, nil
+		}
 		switch {
 		case key.Matches(msg, keys.Quit) && !a.activePanel().IsTyping():
-			return a, tea.Quit
+			return a.quit()
 		case msg.String() == "ctrl+c":
-			return a, tea.Quit
+			return a.quit()
+		case key.Matches(msg, keys.Settings) && !a.activePanel().IsTyping():
+			a.settings = newSettingsScreen()
+			return a, nil
 		case key.Matches(msg, keys.NextBackend) && !a.activePanel().IsTyping():
 			a.active = (a.active + 1) % len(a.panels)
 			return a, nil
@@ -80,6 +132,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tea.MouseMsg:
+		if a.settings != nil {
+			return a, nil
+		}
 		if msg.Y == 0 && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
 			if i, ok := a.tabAt(msg.X); ok {
 				a.active = i
@@ -154,7 +209,7 @@ func (a *App) renderFooter() string {
 			hints = append(hints, keys.Sync)
 		}
 	}
-	hints = append(hints, keys.Help, keys.Quit)
+	hints = append(hints, keys.Settings, keys.Help, keys.Quit)
 
 	var s string
 	for _, h := range hints {
@@ -166,6 +221,13 @@ func (a *App) renderFooter() string {
 func (a *App) View() string {
 	if a.width == 0 {
 		return "starting..."
+	}
+	if a.settings != nil {
+		return lipgloss.JoinVertical(lipgloss.Left,
+			a.renderTabBar(),
+			a.settings.View(a.width, a.height-3),
+			footerBarStyle.Width(a.width).Render(dimStyle.Render("settings")),
+		)
 	}
 	body := a.activePanel().View()
 	return lipgloss.JoinVertical(lipgloss.Left,

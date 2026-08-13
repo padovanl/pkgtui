@@ -45,6 +45,8 @@ const (
 	screenDetail
 	screenConfirm
 	screenHelp
+	screenChangelog
+	screenPPA
 )
 
 // pendingAction holds a destructive/privileged action awaiting user
@@ -119,6 +121,22 @@ type infoResultMsg struct {
 
 func (m infoResultMsg) Backend() string { return m.backend }
 
+type changelogResultMsg struct {
+	backend string
+	text    string
+	err     error
+}
+
+func (m changelogResultMsg) Backend() string { return m.backend }
+
+type ppaListResultMsg struct {
+	backend string
+	ppas    []pkg.PPA
+	err     error
+}
+
+func (m ppaListResultMsg) Backend() string { return m.backend }
+
 type actionDoneMsg struct {
 	backend string
 	err     error
@@ -133,6 +151,9 @@ type Panel struct {
 	orphanLister  pkg.OrphanLister
 	batchManager  pkg.BatchManager
 	chanInstaller pkg.ChannelInstaller
+	holder        pkg.Holder
+	changelogger  pkg.Changelogger
+	ppaManager    pkg.PPAManager
 
 	list     list.Model
 	search   textinput.Model
@@ -152,9 +173,18 @@ type Panel struct {
 	sortBySize bool
 	tagged     map[string]bool
 
+	awaitingUpgradeAllConfirm bool
+	returnScreen              screen // where actionDoneMsg sends us back to
+
 	upgradableCount    int // -1 = not yet known
 	orphanedCount      int // -1 = not yet known
 	startupBannerShown bool
+
+	// PPA screen (apt only).
+	ppas      []pkg.PPA
+	ppaCursor int
+	ppaAdding bool
+	ppaInput  textinput.Model
 
 	width, height int
 	listTopOffset int // rows above the list body, for mouse row mapping
@@ -183,6 +213,11 @@ func NewPanel(mgr pkg.Manager) *Panel {
 	ti.CharLimit = 100
 	ti.Prompt = "🔍 "
 
+	ppaInput := textinput.New()
+	ppaInput.Placeholder = "ppa:user/name"
+	ppaInput.CharLimit = 100
+	ppaInput.Prompt = "➕ "
+
 	vp := viewport.New(0, 0)
 
 	sp := spinner.New()
@@ -199,6 +234,7 @@ func NewPanel(mgr pkg.Manager) *Panel {
 		screen:          screenList,
 		upgradableCount: -1,
 		orphanedCount:   -1,
+		ppaInput:        ppaInput,
 	}
 	if ol, ok := mgr.(pkg.OrphanLister); ok {
 		p.orphanLister = ol
@@ -208,6 +244,15 @@ func NewPanel(mgr pkg.Manager) *Panel {
 	}
 	if ci, ok := mgr.(pkg.ChannelInstaller); ok {
 		p.chanInstaller = ci
+	}
+	if h, ok := mgr.(pkg.Holder); ok {
+		p.holder = h
+	}
+	if cl, ok := mgr.(pkg.Changelogger); ok {
+		p.changelogger = cl
+	}
+	if pm, ok := mgr.(pkg.PPAManager); ok {
+		p.ppaManager = pm
 	}
 	return p
 }
@@ -219,6 +264,38 @@ func (p *Panel) Backend() string { return p.mgr.Name() }
 // single-letter shortcuts (including "q") meant to be typed as text.
 func (p *Panel) IsTyping() bool {
 	return p.search.Focused() || p.list.FilterState() == list.Filtering
+}
+
+// ModeName and SetInitialMode round-trip the current view through config's
+// last-view persistence. Search is deliberately never restored: starting
+// on an empty query every launch would be more confusing than useful.
+func (p *Panel) ModeName() string {
+	switch p.mode {
+	case viewUpgradable:
+		return "upgradable"
+	case viewOrphaned:
+		return "orphaned"
+	default:
+		return "installed"
+	}
+}
+
+func (p *Panel) SetInitialMode(name string) {
+	switch name {
+	case "upgradable":
+		p.mode = viewUpgradable
+	case "orphaned":
+		if p.orphanLister != nil {
+			p.mode = viewOrphaned
+		}
+	}
+}
+
+// ApplySettingsChange re-syncs the parts of list.Model that cached a key
+// binding by value at construction time (KeyMap.Filter), so a runtime
+// keybinding rebind in the settings screen actually takes effect.
+func (p *Panel) ApplySettingsChange() {
+	p.list.KeyMap.Filter = keys.Filter
 }
 
 func (p *Panel) Init() tea.Cmd {
@@ -274,6 +351,24 @@ func (p *Panel) infoCmd(name string) tea.Cmd {
 	return func() tea.Msg {
 		text, err := mgr.Info(name)
 		return infoResultMsg{backend: mgr.Name(), text: text, err: err}
+	}
+}
+
+func (p *Panel) changelogCmd(name string) tea.Cmd {
+	mgr := p.mgr
+	cl := p.changelogger
+	return func() tea.Msg {
+		text, err := cl.Changelog(name)
+		return changelogResultMsg{backend: mgr.Name(), text: text, err: err}
+	}
+}
+
+func (p *Panel) loadPPAsCmd() tea.Cmd {
+	mgr := p.mgr
+	pm := p.ppaManager
+	return func() tea.Msg {
+		ppas, err := pm.ListPPAs()
+		return ppaListResultMsg{backend: mgr.Name(), ppas: ppas, err: err}
 	}
 }
 
@@ -372,6 +467,15 @@ func (p *Panel) Update(msg tea.Msg) (*Panel, tea.Cmd) {
 				p.sortAndSetItems(msg.pkgs)
 			}
 		}
+		if p.awaitingUpgradeAllConfirm {
+			p.awaitingUpgradeAllConfirm = false
+			p.loading = false
+			if msg.err != nil {
+				p.statusMsg = errorStyle.Render("Error: " + msg.err.Error())
+			} else {
+				p.openUpgradeAllConfirm(msg.pkgs)
+			}
+		}
 		p.maybeShowStartupSummary()
 		return p, nil
 	case orphanedResultMsg:
@@ -406,9 +510,29 @@ func (p *Panel) Update(msg tea.Msg) (*Panel, tea.Cmd) {
 		p.viewport.GotoTop()
 		p.screen = screenDetail
 		return p, nil
+	case changelogResultMsg:
+		p.loading = false
+		if msg.err != nil {
+			p.err = msg.err
+			return p, nil
+		}
+		p.err = nil
+		p.viewport.SetContent(msg.text)
+		p.viewport.GotoTop()
+		p.screen = screenChangelog
+		return p, nil
+	case ppaListResultMsg:
+		p.loading = false
+		p.err = msg.err
+		if msg.err == nil {
+			p.ppas = msg.ppas
+			if p.ppaCursor >= len(p.ppas) {
+				p.ppaCursor = maxInt(len(p.ppas)-1, 0)
+			}
+		}
+		return p, nil
 	case actionDoneMsg:
 		p.actionRunning = false
-		p.screen = screenList
 		p.tagged = nil
 		p.refreshDelegate()
 		if msg.err != nil {
@@ -417,6 +541,11 @@ func (p *Panel) Update(msg tea.Msg) (*Panel, tea.Cmd) {
 			p.statusMsg = "Done."
 		}
 		p.loading = true
+		if p.returnScreen == screenPPA {
+			p.screen = screenPPA
+			return p, tea.Batch(p.loadPPAsCmd(), p.spinner.Tick)
+		}
+		p.screen = screenList
 		return p, tea.Batch(p.refreshCmd(), p.spinner.Tick)
 	case spinner.TickMsg:
 		if !p.loading {
@@ -444,10 +573,26 @@ func (p *Panel) Update(msg tea.Msg) (*Panel, tea.Cmd) {
 }
 
 func (p *Panel) handleMouse(msg tea.MouseMsg) (*Panel, tea.Cmd) {
-	if p.screen == screenDetail {
+	if p.screen == screenDetail || p.screen == screenChangelog {
 		var cmd tea.Cmd
 		p.viewport, cmd = p.viewport.Update(msg)
 		return p, cmd
+	}
+	if p.screen == screenPPA {
+		if msg.Action != tea.MouseActionPress {
+			return p, nil
+		}
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			if p.ppaCursor > 0 {
+				p.ppaCursor--
+			}
+		case tea.MouseButtonWheelDown:
+			if p.ppaCursor < len(p.ppas)-1 {
+				p.ppaCursor++
+			}
+		}
+		return p, nil
 	}
 	if p.screen != screenList || msg.Action != tea.MouseActionPress {
 		return p, nil
@@ -476,7 +621,7 @@ func (p *Panel) handleKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
 			return p.executeConfirmedAction()
 		case key.Matches(msg, keys.Cancel):
 			p.pending = nil
-			p.screen = screenList
+			p.screen = p.returnScreen
 		case key.Matches(msg, keys.Channel):
 			if p.pending != nil {
 				p.pending.cycleChannel()
@@ -502,6 +647,21 @@ func (p *Panel) handleKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
 		var cmd tea.Cmd
 		p.viewport, cmd = p.viewport.Update(msg)
 		return p, cmd
+	}
+
+	if p.screen == screenChangelog {
+		switch {
+		case key.Matches(msg, keys.Escape), key.Matches(msg, keys.Enter):
+			p.screen = screenList
+			return p, nil
+		}
+		var cmd tea.Cmd
+		p.viewport, cmd = p.viewport.Update(msg)
+		return p, cmd
+	}
+
+	if p.screen == screenPPA {
+		return p.handlePPAKey(msg)
 	}
 
 	if p.search.Focused() {
@@ -568,11 +728,57 @@ func (p *Panel) handleKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
 		return p.startUpgradeAll()
 	case key.Matches(msg, keys.Sync):
 		return p.startSync()
+	case key.Matches(msg, keys.Hold):
+		return p.startHold()
+	case key.Matches(msg, keys.Changelog):
+		return p.openChangelog()
+	case key.Matches(msg, keys.PPA):
+		return p.openPPAScreen()
 	}
 
 	var cmd tea.Cmd
 	p.list, cmd = p.list.Update(msg)
 	return p, cmd
+}
+
+// handlePPAKey drives the PPA management screen: browsing the current list
+// (up/down, "a" to add, "d"/"r" to remove, esc to leave) or, while adding,
+// typing the new PPA name.
+func (p *Panel) handlePPAKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
+	if p.ppaAdding {
+		switch msg.Type {
+		case tea.KeyEnter:
+			return p.startAddPPA()
+		case tea.KeyEsc:
+			p.ppaAdding = false
+			p.ppaInput.Blur()
+			p.ppaInput.SetValue("")
+			return p, nil
+		}
+		var cmd tea.Cmd
+		p.ppaInput, cmd = p.ppaInput.Update(msg)
+		return p, cmd
+	}
+
+	switch {
+	case key.Matches(msg, keys.Escape):
+		p.screen = screenList
+	case key.Matches(msg, keys.Up):
+		if p.ppaCursor > 0 {
+			p.ppaCursor--
+		}
+	case key.Matches(msg, keys.Down):
+		if p.ppaCursor < len(p.ppas)-1 {
+			p.ppaCursor++
+		}
+	case msg.String() == "a":
+		p.ppaAdding = true
+		p.ppaInput.Focus()
+		return p, textinput.Blink
+	case key.Matches(msg, keys.Remove):
+		return p.startRemovePPA()
+	}
+	return p, nil
 }
 
 // availableModes lists the views this panel actually supports, in cycle
@@ -702,6 +908,56 @@ func (p *Panel) openDetail() (*Panel, tea.Cmd) {
 	return p, tea.Batch(p.infoCmd(sel.Name), p.spinner.Tick)
 }
 
+func (p *Panel) openChangelog() (*Panel, tea.Cmd) {
+	if p.changelogger == nil {
+		p.statusMsg = fmt.Sprintf("Changelogs aren't available for %s.", p.mgr.Name())
+		return p, nil
+	}
+	sel, ok := p.selected()
+	if !ok {
+		return p, nil
+	}
+	p.loading = true
+	p.statusMsg = "fetching changelog (network)..."
+	return p, tea.Batch(p.changelogCmd(sel.Name), p.spinner.Tick)
+}
+
+func (p *Panel) openPPAScreen() (*Panel, tea.Cmd) {
+	if p.ppaManager == nil {
+		p.statusMsg = fmt.Sprintf("PPA management isn't available for %s.", p.mgr.Name())
+		return p, nil
+	}
+	p.screen = screenPPA
+	p.loading = true
+	p.statusMsg = ""
+	return p, tea.Batch(p.loadPPAsCmd(), p.spinner.Tick)
+}
+
+func (p *Panel) startAddPPA() (*Panel, tea.Cmd) {
+	name := strings.TrimSpace(p.ppaInput.Value())
+	p.ppaInput.SetValue("")
+	p.ppaInput.Blur()
+	p.ppaAdding = false
+	if name == "" {
+		return p, nil
+	}
+	p.pending = &pendingAction{label: fmt.Sprintf("Add repository %s?\nThis runs add-apt-repository with root privileges.", name), argv: p.ppaManager.AddPPACmd(name)}
+	p.returnScreen = p.screen
+	p.screen = screenConfirm
+	return p, nil
+}
+
+func (p *Panel) startRemovePPA() (*Panel, tea.Cmd) {
+	if p.ppaCursor < 0 || p.ppaCursor >= len(p.ppas) {
+		return p, nil
+	}
+	target := p.ppas[p.ppaCursor]
+	p.pending = &pendingAction{label: fmt.Sprintf("Remove repository %s?", target.Name), argv: p.ppaManager.RemovePPACmd(target)}
+	p.returnScreen = p.screen
+	p.screen = screenConfirm
+	return p, nil
+}
+
 func (p *Panel) startInstall() (*Panel, tea.Cmd) {
 	if len(p.tagged) > 0 {
 		return p.startBatchInstall()
@@ -724,11 +980,13 @@ func (p *Panel) startInstall() (*Panel, tea.Cmd) {
 			channels:     channels,
 			channelBuild: func(channel string) []string { return ci.InstallChannelCmd(name, channel) },
 		}
+		p.returnScreen = p.screen
 		p.screen = screenConfirm
 		return p, nil
 	}
 	argv := p.mgr.InstallCmd(sel.Name)
 	p.pending = &pendingAction{label: fmt.Sprintf("Install %s?", sel.Name), argv: argv}
+	p.returnScreen = p.screen
 	p.screen = screenConfirm
 	return p, nil
 }
@@ -747,6 +1005,7 @@ func (p *Panel) startRemove() (*Panel, tea.Cmd) {
 	}
 	argv := p.mgr.RemoveCmd(sel.Name)
 	p.pending = &pendingAction{label: fmt.Sprintf("Remove %s?", sel.Name), argv: argv}
+	p.returnScreen = p.screen
 	p.screen = screenConfirm
 	return p, nil
 }
@@ -759,6 +1018,7 @@ func (p *Panel) startBatchInstall() (*Panel, tea.Cmd) {
 	names := p.taggedNames()
 	argv := p.batchManager.InstallManyCmd(names)
 	p.pending = &pendingAction{label: fmt.Sprintf("Install %d selected packages?\n%s", len(names), strings.Join(names, ", ")), argv: argv}
+	p.returnScreen = p.screen
 	p.screen = screenConfirm
 	return p, nil
 }
@@ -771,6 +1031,7 @@ func (p *Panel) startBatchRemove() (*Panel, tea.Cmd) {
 	names := p.taggedNames()
 	argv := p.batchManager.RemoveManyCmd(names)
 	p.pending = &pendingAction{label: fmt.Sprintf("Remove %d selected packages?\n%s", len(names), strings.Join(names, ", ")), argv: argv}
+	p.returnScreen = p.screen
 	p.screen = screenConfirm
 	return p, nil
 }
@@ -786,13 +1047,63 @@ func (p *Panel) startUpgrade() (*Panel, tea.Cmd) {
 	}
 	argv := p.mgr.UpgradeCmd(sel.Name)
 	p.pending = &pendingAction{label: fmt.Sprintf("Upgrade %s?", sel.Name), argv: argv}
+	p.returnScreen = p.screen
 	p.screen = screenConfirm
 	return p, nil
 }
 
+// startUpgradeAll fetches the current upgradable list before showing the
+// confirmation, so the modal can say what's actually about to change
+// instead of a blind "upgrade everything?".
 func (p *Panel) startUpgradeAll() (*Panel, tea.Cmd) {
+	p.awaitingUpgradeAllConfirm = true
+	p.loading = true
+	return p, tea.Batch(p.loadUpgradableCmd(), p.spinner.Tick)
+}
+
+func (p *Panel) openUpgradeAllConfirm(pkgs []pkg.Package) {
+	if len(pkgs) == 0 {
+		p.statusMsg = "Nothing to upgrade."
+		return
+	}
+	names := make([]string, len(pkgs))
+	security := 0
+	for i, pk := range pkgs {
+		names[i] = pk.Name
+		if pk.Security {
+			security++
+		}
+	}
+	label := fmt.Sprintf("Upgrade %d %s packages?", len(pkgs), p.mgr.Name())
+	if security > 0 {
+		label += fmt.Sprintf(" (%d security)", security)
+	}
+	label += "\n" + strings.Join(names, ", ")
 	argv := p.mgr.UpgradeCmd("")
-	p.pending = &pendingAction{label: fmt.Sprintf("Upgrade ALL %s packages?", p.mgr.Name()), argv: argv}
+	p.pending = &pendingAction{label: label, argv: argv}
+	p.returnScreen = p.screen
+	p.screen = screenConfirm
+}
+
+func (p *Panel) startHold() (*Panel, tea.Cmd) {
+	if p.holder == nil {
+		p.statusMsg = fmt.Sprintf("Holding isn't supported for %s.", p.mgr.Name())
+		return p, nil
+	}
+	sel, ok := p.selected()
+	if !ok {
+		return p, nil
+	}
+	if sel.Status == pkg.StatusAvailable {
+		p.statusMsg = "Not installed."
+		return p, nil
+	}
+	if sel.Held {
+		p.pending = &pendingAction{label: fmt.Sprintf("Unhold %s? (allow it to be upgraded again)", sel.Name), argv: p.holder.UnholdCmd(sel.Name)}
+	} else {
+		p.pending = &pendingAction{label: fmt.Sprintf("Hold %s? (block it from future upgrades)", sel.Name), argv: p.holder.HoldCmd(sel.Name)}
+	}
+	p.returnScreen = p.screen
 	p.screen = screenConfirm
 	return p, nil
 }
@@ -804,6 +1115,7 @@ func (p *Panel) startSync() (*Panel, tea.Cmd) {
 		return p, nil
 	}
 	p.pending = &pendingAction{label: "Sync the package cache?", argv: argv}
+	p.returnScreen = p.screen
 	p.screen = screenConfirm
 	return p, nil
 }
@@ -815,7 +1127,7 @@ func (p *Panel) SupportsSync() bool { return p.mgr.UpdateCmd() != nil }
 func (p *Panel) executeConfirmedAction() (*Panel, tea.Cmd) {
 	pending := p.pending
 	p.pending = nil
-	p.screen = screenList
+	p.screen = p.returnScreen
 	if pending == nil || len(pending.argv) == 0 {
 		return p, nil
 	}
@@ -853,8 +1165,20 @@ func (p *Panel) View() string {
 		)
 	}
 
+	if p.screen == screenChangelog {
+		return lipgloss.JoinVertical(lipgloss.Left,
+			titleStyle.Render(fmt.Sprintf(" %s — Changelog ", strings.ToUpper(p.mgr.Name()))),
+			detailBoxStyle.Width(maxInt(p.width-4, 10)).Render(p.viewport.View()),
+			dimStyle.Render("esc/enter: back   ↑/↓: scroll"),
+		)
+	}
+
 	if p.screen == screenHelp {
 		return p.renderHelp()
+	}
+
+	if p.screen == screenPPA {
+		return p.renderPPA()
 	}
 
 	var sections []string
@@ -892,6 +1216,44 @@ func (p *Panel) View() string {
 	return content
 }
 
+func (p *Panel) renderPPA() string {
+	var sections []string
+	sections = append(sections, titleStyle.Render(fmt.Sprintf(" %s — Third-party repositories (PPAs) (%d) ", strings.ToUpper(p.mgr.Name()), len(p.ppas))))
+	sections = append(sections, warnBannerStyle.Width(maxInt(p.width, 10)).Render(
+		"⚠ Careful: adding/removing repositories can break `apt update` or replace system packages. Know what you're adding."))
+
+	if len(p.ppas) == 0 && !p.loading {
+		sections = append(sections, dimStyle.Render("No third-party PPAs found in /etc/apt/sources.list.d."))
+	}
+	for i, ppa := range p.ppas {
+		line := fmt.Sprintf("%s  %s", ppa.Name, dimStyle.Render(ppa.Description))
+		if i == p.ppaCursor {
+			line = lipgloss.NewStyle().Background(lipgloss.Color("237")).Foreground(colorFg).Bold(true).Width(p.width - 2).Render(fmt.Sprintf("%s  %s", ppa.Name, ppa.Description))
+		}
+		sections = append(sections, line)
+	}
+
+	if p.ppaAdding {
+		sections = append(sections, searchBoxStyle.Width(maxInt(p.width-4, 10)).Render(p.ppaInput.View()))
+	}
+
+	var status string
+	switch {
+	case p.loading:
+		status = p.spinner.View() + " loading..."
+	case p.err != nil:
+		status = errorStyle.Render(p.err.Error())
+	case p.statusMsg != "":
+		status = dimStyle.Render(p.statusMsg)
+	}
+	if status != "" {
+		sections = append(sections, status)
+	}
+	sections = append(sections, dimStyle.Render("a: add   d: remove selected   esc: back"))
+
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+}
+
 func (p *Panel) renderHelp() string {
 	keyStyle := lipgloss.NewStyle().Bold(true).Foreground(colorHighlight).Width(14)
 	row := func(k, desc string) string {
@@ -915,7 +1277,7 @@ func (p *Panel) renderHelp() string {
 		row("i", "install selected/tagged package(s)"),
 		row("d", "remove selected/tagged package(s)"),
 		row("u", "upgrade selected package"),
-		row("U", "upgrade ALL packages on this backend"),
+		row("U", "upgrade ALL packages (shows what will change first)"),
 		row("S", "sort the current view by installed size"),
 		row("s", "sync package cache (apt only)"),
 		row("y / n", "confirm / cancel a pending action"),
@@ -923,11 +1285,22 @@ func (p *Panel) renderHelp() string {
 	if p.chanInstaller != nil {
 		rows = append(rows, row("c", "cycle install channel (while confirming a snap install)"))
 	}
+	if p.holder != nil {
+		rows = append(rows, row("H", "hold/unhold the selected package"))
+	}
+	if p.changelogger != nil {
+		rows = append(rows, row("C", "view the selected package's changelog"))
+	}
+	if p.ppaManager != nil {
+		rows = append(rows, row("P", "manage third-party repositories (PPAs)"))
+	}
 	rows = append(rows,
 		"",
 		helpSectionStyle.Render("Status symbols"),
 		"  "+legendLine(),
+		dimStyle.Render("  red bullet: security update    [held]: upgrades blocked"),
 		"",
+		row(",", "settings (theme, keybindings)"),
 		row("q", "quit"),
 		row("?", "close this help"),
 	)
