@@ -643,7 +643,14 @@ func (p *Panel) handleMouse(msg tea.MouseMsg) (*Panel, tea.Cmd) {
 		}
 	case tea.MouseButtonLeft:
 		if row := msg.Y - p.listTopOffset; row >= 0 {
-			p.list.Select(p.list.Paginator.Page*p.list.Paginator.PerPage + row)
+			// A click below the last real row (or anywhere on an empty
+			// list) computes an index past the end of the items slice;
+			// Select doesn't validate that itself, and the out-of-range
+			// cursor later panics inside the list's own render (a slice
+			// bounds crash in bubbles/list.Model.populatedView).
+			if idx := p.list.Paginator.Page*p.list.Paginator.PerPage + row; idx < len(p.list.Items()) {
+				p.list.Select(idx)
+			}
 		}
 	}
 	return p, nil
