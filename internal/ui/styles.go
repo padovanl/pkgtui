@@ -47,6 +47,8 @@ var (
 	statusUpgradableStyle = lipgloss.NewStyle().Foreground(colorWarn)
 	statusAvailableStyle  = lipgloss.NewStyle().Foreground(colorMuted)
 
+	tagMarkStyle = lipgloss.NewStyle().Foreground(colorHighlight).Bold(true)
+
 	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(colorFg)
 	dimStyle   = lipgloss.NewStyle().Foreground(colorMuted)
 

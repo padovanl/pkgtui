@@ -21,6 +21,9 @@ type keyMap struct {
 	Confirm     key.Binding
 	Cancel      key.Binding
 	Help        key.Binding
+	ToggleTag   key.Binding
+	SortSize    key.Binding
+	Channel     key.Binding
 }
 
 var keys = keyMap{
@@ -42,4 +45,7 @@ var keys = keyMap{
 	Confirm:     key.NewBinding(key.WithKeys("y", "Y"), key.WithHelp("y", "confirm")),
 	Cancel:      key.NewBinding(key.WithKeys("n", "N", "esc"), key.WithHelp("n", "cancel")),
 	Help:        key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
+	ToggleTag:   key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "tag")),
+	SortSize:    key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "sort by size")),
+	Channel:     key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "channel")),
 }

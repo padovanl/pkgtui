@@ -78,6 +78,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return a, nil
+
+	case tea.MouseMsg:
+		if msg.Y == 0 && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			if i, ok := a.tabAt(msg.X); ok {
+				a.active = i
+				return a, nil
+			}
+		}
 	}
 
 	// Anything untagged (e.g. list.FilterMatchesMsg, cursor blink ticks)
@@ -104,6 +112,37 @@ func (a *App) renderTabBar() string {
 		gap = 0
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, title, lipgloss.NewStyle().Width(gap).Render(""), tabs)
+}
+
+// tabAt returns which panel's tab label a click at column x on the tab bar
+// (row 0) landed on, mirroring renderTabBar's own layout so the click zones
+// can't drift out of sync with what's drawn.
+func (a *App) tabAt(x int) (int, bool) {
+	widths := make([]int, len(a.panels))
+	total := 0
+	for i, p := range a.panels {
+		label := " " + p.Backend() + " "
+		var rendered string
+		if i == a.active {
+			rendered = tabActiveStyle.Render(label)
+		} else {
+			rendered = tabInactiveStyle.Render(label)
+		}
+		widths[i] = lipgloss.Width(rendered)
+		total += widths[i]
+	}
+	start := a.width - total
+	if x < start {
+		return 0, false
+	}
+	pos := start
+	for i, w := range widths {
+		if x < pos+w {
+			return i, true
+		}
+		pos += w
+	}
+	return 0, false
 }
 
 func (a *App) renderFooter() string {

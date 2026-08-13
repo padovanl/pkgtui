@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"os/exec"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -20,6 +21,7 @@ type viewMode int
 const (
 	viewInstalled viewMode = iota
 	viewUpgradable
+	viewOrphaned
 	viewSearch
 )
 
@@ -27,6 +29,8 @@ func (m viewMode) label() string {
 	switch m {
 	case viewUpgradable:
 		return "Upgradable"
+	case viewOrphaned:
+		return "Orphaned"
 	case viewSearch:
 		return "Search"
 	default:
@@ -44,10 +48,30 @@ const (
 )
 
 // pendingAction holds a destructive/privileged action awaiting user
-// confirmation via the y/N modal.
+// confirmation via the y/N modal. channels is non-nil only for a snap
+// install, letting the user cycle risk levels (stable/candidate/beta/edge)
+// before confirming.
 type pendingAction struct {
-	label string
-	argv  []string
+	label        string
+	argv         []string
+	channels     []string
+	channelIdx   int
+	channelBuild func(channel string) []string
+}
+
+func (a *pendingAction) currentChannel() string {
+	if len(a.channels) == 0 {
+		return ""
+	}
+	return a.channels[a.channelIdx%len(a.channels)]
+}
+
+func (a *pendingAction) cycleChannel() {
+	if len(a.channels) == 0 {
+		return
+	}
+	a.channelIdx = (a.channelIdx + 1) % len(a.channels)
+	a.argv = a.channelBuild(a.currentChannel())
 }
 
 // --- messages, each self-tagged with the backend it belongs to so the root
@@ -70,6 +94,14 @@ type upgradableResultMsg struct {
 }
 
 func (m upgradableResultMsg) Backend() string { return m.backend }
+
+type orphanedResultMsg struct {
+	backend string
+	pkgs    []pkg.Package
+	err     error
+}
+
+func (m orphanedResultMsg) Backend() string { return m.backend }
 
 type searchResultMsg struct {
 	backend string
@@ -97,7 +129,10 @@ func (m actionDoneMsg) Backend() string { return m.backend }
 // Panel is the self-contained UI + state for a single package manager
 // backend (apt or snap).
 type Panel struct {
-	mgr pkg.Manager
+	mgr           pkg.Manager
+	orphanLister  pkg.OrphanLister
+	batchManager  pkg.BatchManager
+	chanInstaller pkg.ChannelInstaller
 
 	list     list.Model
 	search   textinput.Model
@@ -114,7 +149,15 @@ type Panel struct {
 	lastQuery     string
 	pending       *pendingAction
 
+	sortBySize bool
+	tagged     map[string]bool
+
+	upgradableCount    int // -1 = not yet known
+	orphanedCount      int // -1 = not yet known
+	startupBannerShown bool
+
 	width, height int
+	listTopOffset int // rows above the list body, for mouse row mapping
 }
 
 func NewPanel(mgr pkg.Manager) *Panel {
@@ -146,15 +189,27 @@ func NewPanel(mgr pkg.Manager) *Panel {
 	sp.Spinner = spinner.Dot
 	sp.Style = spinnerStyle
 
-	return &Panel{
-		mgr:      mgr,
-		list:     l,
-		search:   ti,
-		viewport: vp,
-		spinner:  sp,
-		mode:     viewInstalled,
-		screen:   screenList,
+	p := &Panel{
+		mgr:             mgr,
+		list:            l,
+		search:          ti,
+		viewport:        vp,
+		spinner:         sp,
+		mode:            viewInstalled,
+		screen:          screenList,
+		upgradableCount: -1,
+		orphanedCount:   -1,
 	}
+	if ol, ok := mgr.(pkg.OrphanLister); ok {
+		p.orphanLister = ol
+	}
+	if bm, ok := mgr.(pkg.BatchManager); ok {
+		p.batchManager = bm
+	}
+	if ci, ok := mgr.(pkg.ChannelInstaller); ok {
+		p.chanInstaller = ci
+	}
+	return p
 }
 
 func (p *Panel) Backend() string { return p.mgr.Name() }
@@ -171,7 +226,14 @@ func (p *Panel) Init() tea.Cmd {
 		return nil
 	}
 	p.loading = true
-	return tea.Batch(p.loadInstalledCmd(), p.spinner.Tick)
+	// The upgradable (and, if supported, orphaned) counts are fetched in the
+	// background purely for the startup summary banner; they don't touch
+	// p.loading unless that happens to already be the active view.
+	cmds := []tea.Cmd{p.loadInstalledCmd(), p.loadUpgradableCmd(), p.spinner.Tick}
+	if p.orphanLister != nil {
+		cmds = append(cmds, p.loadOrphanedCmd())
+	}
+	return tea.Batch(cmds...)
 }
 
 func (p *Panel) loadInstalledCmd() tea.Cmd {
@@ -187,6 +249,15 @@ func (p *Panel) loadUpgradableCmd() tea.Cmd {
 	return func() tea.Msg {
 		pkgs, err := mgr.ListUpgradable()
 		return upgradableResultMsg{backend: mgr.Name(), pkgs: pkgs, err: err}
+	}
+}
+
+func (p *Panel) loadOrphanedCmd() tea.Cmd {
+	mgr := p.mgr
+	ol := p.orphanLister
+	return func() tea.Msg {
+		pkgs, err := ol.ListOrphaned()
+		return orphanedResultMsg{backend: mgr.Name(), pkgs: pkgs, err: err}
 	}
 }
 
@@ -206,8 +277,29 @@ func (p *Panel) infoCmd(name string) tea.Cmd {
 	}
 }
 
+// sortPackages reorders pkgs in place by installed size (descending) when
+// that sort is active; otherwise it leaves the backend's own ordering
+// alone, since apt-cache/snap find already rank search results by
+// relevance and re-sorting them alphabetically would just make search
+// worse.
+func (p *Panel) sortPackages(pkgs []pkg.Package) {
+	if !p.sortBySize {
+		return
+	}
+	sort.SliceStable(pkgs, func(i, j int) bool { return pkgs[i].Size > pkgs[j].Size })
+}
+
 func (p *Panel) setItems(pkgs []pkg.Package) {
 	p.list.SetItems(itemsFrom(pkgs))
+}
+
+func (p *Panel) sortAndSetItems(pkgs []pkg.Package) {
+	p.sortPackages(pkgs)
+	p.setItems(pkgs)
+}
+
+func (p *Panel) refreshDelegate() {
+	p.list.SetDelegate(itemDelegate{showSize: p.sortBySize, tagged: p.tagged})
 }
 
 func (p *Panel) setSize(w, h int) {
@@ -219,6 +311,7 @@ func (p *Panel) setSize(w, h int) {
 		searchH = 3
 	}
 	statusH := 1
+	p.listTopOffset = 1 + headerH + legendH + searchH // +1 for the app's own tab bar
 	listH := max(h-headerH-legendH-searchH-statusH, 3)
 	if w > 4 {
 		p.list.SetSize(w-2, listH)
@@ -230,27 +323,75 @@ func (p *Panel) setSize(w, h int) {
 	p.search.Width = w - 8
 }
 
+// maybeShowStartupSummary sets the initial status line to a one-time
+// "N upgradable · M orphaned" summary once both background counts (or just
+// the upgradable one, for backends without ListOrphaned) have arrived, and
+// nothing else has already claimed the status line.
+func (p *Panel) maybeShowStartupSummary() {
+	if p.startupBannerShown || p.upgradableCount < 0 {
+		return
+	}
+	if p.orphanLister != nil && p.orphanedCount < 0 {
+		return
+	}
+	p.startupBannerShown = true
+	if p.statusMsg != "" {
+		return
+	}
+	var parts []string
+	if p.upgradableCount > 0 {
+		parts = append(parts, fmt.Sprintf("%d upgradable", p.upgradableCount))
+	}
+	if p.orphanLister != nil && p.orphanedCount > 0 {
+		parts = append(parts, fmt.Sprintf("%d orphaned", p.orphanedCount))
+	}
+	if len(parts) > 0 {
+		p.statusMsg = strings.Join(parts, " · ")
+	}
+}
+
 func (p *Panel) Update(msg tea.Msg) (*Panel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case installedResultMsg:
-		p.loading = false
-		p.err = msg.err
-		if msg.err == nil && p.mode == viewInstalled {
-			p.setItems(msg.pkgs)
+		if p.mode == viewInstalled {
+			p.loading = false
+			p.err = msg.err
+			if msg.err == nil {
+				p.sortAndSetItems(msg.pkgs)
+			}
 		}
 		return p, nil
 	case upgradableResultMsg:
-		p.loading = false
-		p.err = msg.err
-		if msg.err == nil && p.mode == viewUpgradable {
-			p.setItems(msg.pkgs)
+		if msg.err == nil {
+			p.upgradableCount = len(msg.pkgs)
 		}
+		if p.mode == viewUpgradable {
+			p.loading = false
+			p.err = msg.err
+			if msg.err == nil {
+				p.sortAndSetItems(msg.pkgs)
+			}
+		}
+		p.maybeShowStartupSummary()
+		return p, nil
+	case orphanedResultMsg:
+		if msg.err == nil {
+			p.orphanedCount = len(msg.pkgs)
+		}
+		if p.mode == viewOrphaned {
+			p.loading = false
+			p.err = msg.err
+			if msg.err == nil {
+				p.sortAndSetItems(msg.pkgs)
+			}
+		}
+		p.maybeShowStartupSummary()
 		return p, nil
 	case searchResultMsg:
 		p.loading = false
 		p.err = msg.err
 		if msg.err == nil && p.mode == viewSearch {
-			p.setItems(msg.pkgs)
+			p.sortAndSetItems(msg.pkgs)
 			p.statusMsg = fmt.Sprintf("%d results for %q", len(msg.pkgs), p.lastQuery)
 		}
 		return p, nil
@@ -268,6 +409,8 @@ func (p *Panel) Update(msg tea.Msg) (*Panel, tea.Cmd) {
 	case actionDoneMsg:
 		p.actionRunning = false
 		p.screen = screenList
+		p.tagged = nil
+		p.refreshDelegate()
 		if msg.err != nil {
 			p.statusMsg = errorStyle.Render("Error: " + msg.err.Error())
 		} else {
@@ -285,6 +428,8 @@ func (p *Panel) Update(msg tea.Msg) (*Panel, tea.Cmd) {
 		var cmd tea.Cmd
 		p.spinner, cmd = p.spinner.Update(msg)
 		return p, cmd
+	case tea.MouseMsg:
+		return p.handleMouse(msg)
 	case tea.KeyMsg:
 		return p.handleKey(msg)
 	}
@@ -298,6 +443,32 @@ func (p *Panel) Update(msg tea.Msg) (*Panel, tea.Cmd) {
 	return p, cmd
 }
 
+func (p *Panel) handleMouse(msg tea.MouseMsg) (*Panel, tea.Cmd) {
+	if p.screen == screenDetail {
+		var cmd tea.Cmd
+		p.viewport, cmd = p.viewport.Update(msg)
+		return p, cmd
+	}
+	if p.screen != screenList || msg.Action != tea.MouseActionPress {
+		return p, nil
+	}
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		for range 3 {
+			p.list.CursorUp()
+		}
+	case tea.MouseButtonWheelDown:
+		for range 3 {
+			p.list.CursorDown()
+		}
+	case tea.MouseButtonLeft:
+		if row := msg.Y - p.listTopOffset; row >= 0 {
+			p.list.Select(p.list.Paginator.Page*p.list.Paginator.PerPage + row)
+		}
+	}
+	return p, nil
+}
+
 func (p *Panel) handleKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
 	if p.screen == screenConfirm {
 		switch {
@@ -306,6 +477,10 @@ func (p *Panel) handleKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
 		case key.Matches(msg, keys.Cancel):
 			p.pending = nil
 			p.screen = screenList
+		case key.Matches(msg, keys.Channel):
+			if p.pending != nil {
+				p.pending.cycleChannel()
+			}
 		}
 		return p, nil
 	}
@@ -379,6 +554,10 @@ func (p *Panel) handleKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
 		return p.cycleView()
 	case key.Matches(msg, keys.Enter):
 		return p.openDetail()
+	case key.Matches(msg, keys.ToggleTag):
+		return p.toggleTag()
+	case key.Matches(msg, keys.SortSize):
+		return p.toggleSortSize()
 	case key.Matches(msg, keys.Install):
 		return p.startInstall()
 	case key.Matches(msg, keys.Remove):
@@ -396,22 +575,33 @@ func (p *Panel) handleKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
 	return p, cmd
 }
 
-func (p *Panel) cycleMode() {
-	switch p.mode {
-	case viewInstalled:
-		p.mode = viewUpgradable
-	case viewUpgradable:
-		p.mode = viewSearch
-	case viewSearch:
-		p.mode = viewInstalled
+// availableModes lists the views this panel actually supports, in cycle
+// order; Orphaned only appears for backends implementing OrphanLister.
+func (p *Panel) availableModes() []viewMode {
+	modes := []viewMode{viewInstalled, viewUpgradable}
+	if p.orphanLister != nil {
+		modes = append(modes, viewOrphaned)
 	}
+	return append(modes, viewSearch)
+}
+
+func (p *Panel) cycleMode() {
+	modes := p.availableModes()
+	idx := 0
+	for i, m := range modes {
+		if m == p.mode {
+			idx = i
+			break
+		}
+	}
+	p.mode = modes[(idx+1)%len(modes)]
 	p.statusMsg = ""
 	p.setSize(p.width, p.height)
 }
 
-// cycleView advances to the next view (Installed -> Upgradable -> Search ->
-// Installed), blurring the search box first so it doesn't swallow the Tab
-// keypress that got us here, then re-focusing it if we landed on Search.
+// cycleView advances to the next view, blurring the search box first so it
+// doesn't swallow the Tab keypress that got us here, then re-focusing it if
+// we landed on Search.
 func (p *Panel) cycleView() (*Panel, tea.Cmd) {
 	p.search.Blur()
 	p.cycleMode()
@@ -423,6 +613,45 @@ func (p *Panel) cycleView() (*Panel, tea.Cmd) {
 	return p, cmd
 }
 
+// toggleSortSize flips the size sort and re-fetches the current view's data
+// rather than just re-sorting what's already on screen: turning the sort
+// off needs to restore the backend's own ordering (alphabetical for
+// installed/orphaned, relevance for search), which isn't recoverable from
+// an already-resorted item list.
+func (p *Panel) toggleSortSize() (*Panel, tea.Cmd) {
+	p.sortBySize = !p.sortBySize
+	p.refreshDelegate()
+	p.loading = true
+	return p, tea.Batch(p.refreshCmd(), p.spinner.Tick)
+}
+
+func (p *Panel) toggleTag() (*Panel, tea.Cmd) {
+	sel, ok := p.selected()
+	if !ok {
+		return p, nil
+	}
+	if p.tagged == nil {
+		p.tagged = map[string]bool{}
+	}
+	if p.tagged[sel.Name] {
+		delete(p.tagged, sel.Name)
+	} else {
+		p.tagged[sel.Name] = true
+	}
+	p.refreshDelegate()
+	p.list.CursorDown()
+	return p, nil
+}
+
+func (p *Panel) taggedNames() []string {
+	names := make([]string, 0, len(p.tagged))
+	for n := range p.tagged {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
 func (p *Panel) loadForModeCmd() tea.Cmd {
 	switch p.mode {
 	case viewInstalled:
@@ -431,6 +660,9 @@ func (p *Panel) loadForModeCmd() tea.Cmd {
 	case viewUpgradable:
 		p.loading = true
 		return tea.Batch(p.loadUpgradableCmd(), p.spinner.Tick)
+	case viewOrphaned:
+		p.loading = true
+		return tea.Batch(p.loadOrphanedCmd(), p.spinner.Tick)
 	case viewSearch:
 		p.list.SetItems(nil)
 	}
@@ -441,6 +673,8 @@ func (p *Panel) refreshCmd() tea.Cmd {
 	switch p.mode {
 	case viewUpgradable:
 		return p.loadUpgradableCmd()
+	case viewOrphaned:
+		return p.loadOrphanedCmd()
 	case viewSearch:
 		if p.lastQuery != "" {
 			return p.searchCmd(p.lastQuery)
@@ -469,12 +703,28 @@ func (p *Panel) openDetail() (*Panel, tea.Cmd) {
 }
 
 func (p *Panel) startInstall() (*Panel, tea.Cmd) {
+	if len(p.tagged) > 0 {
+		return p.startBatchInstall()
+	}
 	sel, ok := p.selected()
 	if !ok {
 		return p, nil
 	}
 	if sel.Status != pkg.StatusAvailable {
 		p.statusMsg = "Already installed: use 'u' to upgrade or 'd' to remove."
+		return p, nil
+	}
+	if p.chanInstaller != nil {
+		channels := p.chanInstaller.Channels()
+		name := sel.Name
+		ci := p.chanInstaller
+		p.pending = &pendingAction{
+			label:        fmt.Sprintf("Install %s?", name),
+			argv:         ci.InstallChannelCmd(name, channels[0]),
+			channels:     channels,
+			channelBuild: func(channel string) []string { return ci.InstallChannelCmd(name, channel) },
+		}
+		p.screen = screenConfirm
 		return p, nil
 	}
 	argv := p.mgr.InstallCmd(sel.Name)
@@ -484,6 +734,9 @@ func (p *Panel) startInstall() (*Panel, tea.Cmd) {
 }
 
 func (p *Panel) startRemove() (*Panel, tea.Cmd) {
+	if len(p.tagged) > 0 {
+		return p.startBatchRemove()
+	}
 	sel, ok := p.selected()
 	if !ok {
 		return p, nil
@@ -494,6 +747,30 @@ func (p *Panel) startRemove() (*Panel, tea.Cmd) {
 	}
 	argv := p.mgr.RemoveCmd(sel.Name)
 	p.pending = &pendingAction{label: fmt.Sprintf("Remove %s?", sel.Name), argv: argv}
+	p.screen = screenConfirm
+	return p, nil
+}
+
+func (p *Panel) startBatchInstall() (*Panel, tea.Cmd) {
+	if p.batchManager == nil {
+		p.statusMsg = "Batch install isn't supported for this backend."
+		return p, nil
+	}
+	names := p.taggedNames()
+	argv := p.batchManager.InstallManyCmd(names)
+	p.pending = &pendingAction{label: fmt.Sprintf("Install %d selected packages?\n%s", len(names), strings.Join(names, ", ")), argv: argv}
+	p.screen = screenConfirm
+	return p, nil
+}
+
+func (p *Panel) startBatchRemove() (*Panel, tea.Cmd) {
+	if p.batchManager == nil {
+		p.statusMsg = "Batch remove isn't supported for this backend."
+		return p, nil
+	}
+	names := p.taggedNames()
+	argv := p.batchManager.RemoveManyCmd(names)
+	p.pending = &pendingAction{label: fmt.Sprintf("Remove %d selected packages?\n%s", len(names), strings.Join(names, ", ")), argv: argv}
 	p.screen = screenConfirm
 	return p, nil
 }
@@ -552,7 +829,14 @@ func (p *Panel) executeConfirmedAction() (*Panel, tea.Cmd) {
 
 func (p *Panel) renderHeader() string {
 	count := len(p.list.Items())
-	label := fmt.Sprintf(" %s — %s (%d) ", strings.ToUpper(p.mgr.Name()), p.mode.label(), count)
+	extra := ""
+	if p.sortBySize {
+		extra += " · by size"
+	}
+	if n := len(p.tagged); n > 0 {
+		extra += fmt.Sprintf(" · %d tagged", n)
+	}
+	label := fmt.Sprintf(" %s — %s (%d)%s ", strings.ToUpper(p.mgr.Name()), p.mode.label(), count, extra)
 	return titleStyle.Render(label)
 }
 
@@ -597,7 +881,11 @@ func (p *Panel) View() string {
 	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
 
 	if p.screen == screenConfirm && p.pending != nil {
-		modal := modalStyle.Render(p.pending.label + "\n\n[y] confirm    [n] cancel")
+		body := p.pending.label
+		if len(p.pending.channels) > 0 {
+			body += fmt.Sprintf("\n\nChannel: %s  [c] change", p.pending.currentChannel())
+		}
+		modal := modalStyle.Render(body + "\n\n[y] confirm    [n] cancel")
 		content = lipgloss.Place(p.width, p.height, lipgloss.Center, lipgloss.Center, modal)
 	}
 
@@ -610,12 +898,12 @@ func (p *Panel) renderHelp() string {
 		return keyStyle.Render(k) + dimStyle.Render(desc)
 	}
 
-	body := lipgloss.JoinVertical(lipgloss.Left,
+	rows := []string{
 		titleStyle.Render("pkgtui — help"),
 		"",
 		helpSectionStyle.Render("Navigation"),
 		row("← / →", "switch backend (apt / snap)"),
-		row("tab", "switch view (Installed / Upgradable / Search)"),
+		row("tab", "switch view (Installed / Upgradable"+p.orphanedTabLabel()+" / Search)"),
 		row("↑/↓, j/k", "move selection"),
 		row("/", "search the full apt/snap catalog, then enter to run it"),
 		row("f", "filter the packages currently shown, as you type"),
@@ -623,12 +911,19 @@ func (p *Panel) renderHelp() string {
 		row("esc", "back / cancel filter"),
 		"",
 		helpSectionStyle.Render("Actions"),
-		row("i", "install selected package"),
-		row("d", "remove selected package"),
+		row("space", "tag/untag the selected package for a batch action"),
+		row("i", "install selected/tagged package(s)"),
+		row("d", "remove selected/tagged package(s)"),
 		row("u", "upgrade selected package"),
 		row("U", "upgrade ALL packages on this backend"),
+		row("S", "sort the current view by installed size"),
 		row("s", "sync package cache (apt only)"),
 		row("y / n", "confirm / cancel a pending action"),
+	}
+	if p.chanInstaller != nil {
+		rows = append(rows, row("c", "cycle install channel (while confirming a snap install)"))
+	}
+	rows = append(rows,
 		"",
 		helpSectionStyle.Render("Status symbols"),
 		"  "+legendLine(),
@@ -637,7 +932,15 @@ func (p *Panel) renderHelp() string {
 		row("?", "close this help"),
 	)
 
+	body := lipgloss.JoinVertical(lipgloss.Left, rows...)
 	return lipgloss.Place(p.width, p.height, lipgloss.Center, lipgloss.Center, helpBoxStyle.Render(body))
+}
+
+func (p *Panel) orphanedTabLabel() string {
+	if p.orphanLister == nil {
+		return ""
+	}
+	return " / Orphaned"
 }
 
 func maxInt(a, b int) int {

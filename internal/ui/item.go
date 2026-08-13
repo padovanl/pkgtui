@@ -57,10 +57,34 @@ func legendLine() string {
 	return strings.Join(parts, dimStyle.Render("   "))
 }
 
+// humanizeBytes formats a byte count as a short human-readable size, e.g.
+// 2214592 -> "2.1MB". Packages without a known size (b <= 0) render as "-".
+func humanizeBytes(b int64) string {
+	if b <= 0 {
+		return "-"
+	}
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%dB", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f%cB", float64(b)/float64(div), "KMGTPE"[exp])
+}
+
 // itemDelegate renders each row as:
 //
 //	● name          version          summary
-type itemDelegate struct{}
+//
+// showSize swaps the version column for a human-readable installed size
+// (used when the list is sorted by size); tagged marks multi-selected rows.
+type itemDelegate struct {
+	showSize bool
+	tagged   map[string]bool
+}
 
 func (d itemDelegate) Height() int                             { return 1 }
 func (d itemDelegate) Spacing() int                            { return 0 }
@@ -73,9 +97,17 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	}
 	bullet, bulletStyle := statusBullet(it.p.Status)
 
+	mark := "  "
+	if d.tagged[it.p.Name] {
+		mark = tagMarkStyle.Render("✓ ")
+	}
+
 	version := it.p.Version
 	if it.p.Status != pkg.StatusAvailable {
 		version = it.p.Installed
+	}
+	if d.showSize {
+		version = humanizeBytes(it.p.Size)
 	}
 	if version == "" {
 		version = "-"
@@ -92,7 +124,8 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	}
 
 	summary := it.p.Summary
-	line := fmt.Sprintf("%s %-*s %-*s %s",
+	line := fmt.Sprintf("%s%s %-*s %-*s %s",
+		mark,
 		bulletStyle.Render(bullet),
 		nameW, name,
 		versionW, version,
