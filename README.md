@@ -1,4 +1,4 @@
-# pkgtui
+# pkgtui 📦
 
 [![CI](https://github.com/padovanl/pkgtui/actions/workflows/ci.yml/badge.svg)](https://github.com/padovanl/pkgtui/actions/workflows/ci.yml)
 [![Release](https://github.com/padovanl/pkgtui/actions/workflows/release.yml/badge.svg)](https://github.com/padovanl/pkgtui/actions/workflows/release.yml)
@@ -13,7 +13,7 @@ remember the syntax of either package manager.
 
 ![pkgtui demo](assets/demo.gif)
 
-## Features
+## ✨ Features
 
 - **Two separate backends**: dedicated tabs for `apt` and `snap`, each with
   its own state (the two worlds are never mixed together).
@@ -61,7 +61,7 @@ remember the syntax of either package manager.
 - **Mouse support**: click a tab to switch backend, click a row to select
   it, scroll to navigate.
 
-## Installation
+## 📥 Installation
 
 No verification/store required: grab the asset from the [releases
 page](https://github.com/padovanl/pkgtui/releases) and install it locally.
@@ -107,7 +107,7 @@ go build -o pkgtui .
 sudo mv pkgtui /usr/local/bin/
 ```
 
-## Usage
+## ⌨️ Usage
 
 ```bash
 pkgtui
@@ -162,20 +162,20 @@ under the header and in the `?` help screen:
 | `○`         | Not installed      |
 | `◆`         | Held: upgrades blocked (`H` to toggle) |
 
-## Configuration
+## ⚙️ Configuration
 
 Settings (theme, rebound keys) and the last-used view live in
 `~/.config/pkgtui/config.json`, written by the settings screen (`,`) — there's
 normally no need to edit it by hand, but it's plain JSON if you want to.
 
-## Requirements
+## ✅ Requirements
 
 - Linux with `apt`/`dpkg` and/or `snapd` installed (having just one of the
   two is fine: the other tab simply reports "not available").
 - `sudo` configured for the current user, for privileged operations.
 - Go 1.24+ only if building from source.
 
-## Contributing
+## 🤝 Contributing
 
 Pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the
 branch policy, local setup and code style. Short version: open PRs against
@@ -212,6 +212,6 @@ push triggers the [release workflow](.github/workflows/release.yml), which
 independently re-checks the tag is on `main`, then builds and attaches the
 `.deb`, `.snap` and `.tar.gz` to a new GitHub Release.
 
-## License
+## 📄 License
 
 MIT — see [LICENSE](LICENSE).
