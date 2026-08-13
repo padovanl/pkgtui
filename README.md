@@ -11,17 +11,7 @@ An **htop-style** terminal UI (TUI) to search, install, remove and upgrade
 **apt** and **snap** packages, from a single dashboard, without having to
 remember the syntax of either package manager.
 
-```
-  pkgtui                                                              apt      snap
- APT — Installed (543)
-● installed   ▲ upgrade available   ○ not installed
-● bash                         5.1-6ubuntu1.1
-● curl                         7.81.0-1ubuntu1.25
-▲ nftables                     1.0.2-1ubuntu3
-● python3                      3.10.6-1~22.04.1
-...
-  → apt/snap  tab view  / search  enter details  i install  d remove  u upgrade  U upgrade all  s sync  ? help  q quit
-```
+![pkgtui demo](assets/demo.gif)
 
 ## Features
 
@@ -29,10 +19,19 @@ remember the syntax of either package manager.
   its own state (the two worlds are never mixed together).
 - **Live search**: search packages by name/description (`apt-cache search`
   / `snap find`).
-- **Installed / Upgradable**: dedicated views to see at a glance what you
-  have installed and what has an update available.
-- **Package details**: description, version, dependencies (apt) or
-  publisher/channels (snap) before you install anything.
+- **Local filter**: narrow whatever list is currently on screen as you type
+  — instant, no external query.
+- **Installed / Upgradable / Orphaned**: dedicated views for what's on your
+  system, what has an update, and (apt) what `apt-get autoremove` would
+  clean up.
+- **Package details**: description, version, dependencies — including
+  *reverse* dependencies, so you know what else relies on a package before
+  you remove it — or publisher/channels for snap.
+- **Sort by installed size**: find what's actually eating your disk.
+- **Multi-select**: tag several packages and install/remove them in one
+  batch action.
+- **Channel picker**: install a snap from `stable`, `candidate`, `beta` or
+  `edge` instead of always defaulting to stable.
 - **Install/remove/upgrade with confirmation**: every privileged action
   asks for confirmation (`y`/`n`) before running.
 - **Live output**: `apt-get`/`snap` commands run attached to the real
@@ -40,6 +39,8 @@ remember the syntax of either package manager.
   what's happening, just like from the command line.
 - **Upgrade all**: one key to run `apt-get upgrade` or `snap refresh` on
   every package of the active backend.
+- **Mouse support**: click a tab to switch backend, click a row to select
+  it, scroll to navigate.
 
 ## Installation
 
@@ -96,20 +97,25 @@ pkgtui
 | Key         | Action                                     |
 | ----------- | ------------------------------------------- |
 | `←` / `→`   | Switch backend (apt / snap)                 |
-| `tab`       | Switch view (Installed / Upgradable / Search) |
+| `tab`       | Switch view (Installed / Upgradable / Orphaned\* / Search) |
 | `/`         | Search the full apt/snap catalog (then `enter` to run it) |
 | `f`         | Filter the packages currently shown, live as you type |
-| `↑`/`↓`, `j`/`k` | Navigate the list                      |
+| `↑`/`↓`, `j`/`k` | Navigate the list (mouse wheel and clicks work too) |
 | `enter`     | Show details for the selected package       |
-| `i`         | Install the selected package                |
-| `d`         | Remove the selected package                 |
+| `space`     | Tag/untag the selected package for a batch action |
+| `i`         | Install the selected package, or all tagged packages |
+| `d`         | Remove the selected package, or all tagged packages |
 | `u`         | Upgrade the selected package                |
 | `U`         | Upgrade **all** packages on the active backend |
+| `S`         | Sort the current view by installed size     |
+| `c`         | Cycle the install channel (while confirming a snap install) |
 | `s`         | Sync the cache (`apt-get update`; no-op on snap) |
 | `y` / `n`   | Confirm / cancel an action                  |
 | `esc`       | Go back                                     |
 | `?`         | Toggle the in-app help screen (full keybinding list) |
 | `q`         | Quit                                        |
+
+\* Orphaned only appears for apt: packages `apt-get autoremove` would clean up.
 
 Actions that change the system (install, remove, upgrade) run with `sudo`:
 pkgtui hands control of the terminal to the real command, so you'll see any
@@ -134,7 +140,10 @@ under the header and in the `?` help screen:
 
 ## Contributing
 
-Pull requests are welcome — please open them against `develop`, not `main`.
+Pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the
+branch policy, local setup and code style. Short version: open PRs against
+`develop`, not `main`, and run `gofmt -l . && go vet ./... && go test ./...`
+before pushing.
 
 The project uses [goreleaser](https://goreleaser.com) to build multi-arch
 binaries and generate the `.deb` (via its built-in nfpm integration), and
@@ -151,8 +160,8 @@ snapcraft pack
 
 Development happens on `develop`; releases are cut from `main`. Every push
 to either branch runs the [CI workflow](.github/workflows/ci.yml)
-(`gofmt`, `go vet`, `go build`). To ship a release: merge `develop` into
-`main`, then run:
+(`gofmt`, `go vet`, `go build`, `go test`). To ship a release: merge
+`develop` into `main`, then run:
 
 ```bash
 git checkout main && git merge develop && git push origin main
