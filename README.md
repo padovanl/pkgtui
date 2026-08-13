@@ -15,12 +15,13 @@ remember the syntax of either package manager.
 ```
   pkgtui                                                              apt      snap
  APT — Installed (543)
+● installed   ▲ upgrade available   ○ not installed
 ● bash                         5.1-6ubuntu1.1
 ● curl                         7.81.0-1ubuntu1.25
 ▲ nftables                     1.0.2-1ubuntu3
 ● python3                      3.10.6-1~22.04.1
 ...
-  → apt/snap  tab view  / search  enter details  i install  d remove  u upgrade  U upgrade all  s sync  q quit
+  → apt/snap  tab view  / search  enter details  i install  d remove  u upgrade  U upgrade all  s sync  ? help  q quit
 ```
 
 ## Features
@@ -100,12 +101,22 @@ pkgtui
 | `s`         | Sync the cache (`apt-get update`; no-op on snap) |
 | `y` / `n`   | Confirm / cancel an action                  |
 | `esc`       | Go back                                     |
+| `?`         | Toggle the in-app help screen (full keybinding list) |
 | `q`         | Quit                                        |
 
 Actions that change the system (install, remove, upgrade) run with `sudo`:
 pkgtui hands control of the terminal to the real command, so you'll see any
 password prompt and `apt`/`snap` output exactly as you would from the
 command line.
+
+Every package row starts with a status symbol, also shown as a legend right
+under the header and in the `?` help screen:
+
+| Symbol | Meaning           |
+| :----: | ----------------- |
+| `●`    | Installed          |
+| `▲`    | Installed, upgrade available |
+| `○`    | Not installed      |
 
 ## Requirements
 
