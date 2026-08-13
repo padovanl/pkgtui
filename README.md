@@ -178,39 +178,9 @@ normally no need to edit it by hand, but it's plain JSON if you want to.
 ## 🤝 Contributing
 
 Pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the
-branch policy, local setup and code style. Short version: open PRs against
-`develop`, not `main`, and run `gofmt -l . && go vet ./... && go test ./...`
-before pushing.
-
-The project uses [goreleaser](https://goreleaser.com) to build multi-arch
-binaries and generate the `.deb` (via its built-in nfpm integration), and
-[snapcraft](https://snapcraft.io/docs/snapcraft-overview) for the `.snap`
-(see `snap/snapcraft.yaml`).
-
-```bash
-# Local build + .deb, without publishing anything
-goreleaser release --snapshot --clean --skip=publish
-
-# Local snap package
-snapcraft pack
-```
-
-Development happens on `develop`; releases are cut from `main`. Every push
-to either branch runs the [CI workflow](.github/workflows/ci.yml)
-(`gofmt`, `go vet`, `go build`, `go test`). To ship a release: merge
-`develop` into `main`, then run:
-
-```bash
-git checkout main && git merge develop && git push origin main
-scripts/release.sh vX.Y.Z
-```
-
-`scripts/release.sh` refuses to run unless you're on `main`, the working
-tree is clean, local `main` matches `origin/main`, and the tag doesn't
-already exist locally or on the remote — then it tags and pushes. That
-push triggers the [release workflow](.github/workflows/release.yml), which
-independently re-checks the tag is on `main`, then builds and attaches the
-`.deb`, `.snap` and `.tar.gz` to a new GitHub Release.
+branch policy, local setup, code style, and the release process. Short
+version: open PRs against `develop`, not `main`, and run
+`gofmt -l . && go vet ./... && go test ./...` before pushing.
 
 ## 📄 License
 
