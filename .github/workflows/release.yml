@@ -54,6 +54,10 @@ jobs:
     needs: goreleaser
     steps:
       - uses: actions/checkout@v4
+        with:
+          # snapcraft.yaml derives the snap's version from `git describe`,
+          # which needs the tag (and enough history to reach it) present.
+          fetch-depth: 0
 
       # Builds snap/snapcraft.yaml (classic confinement) for amd64.
       - uses: snapcore/action-build@v1
@@ -62,8 +66,15 @@ jobs:
       - name: Rename snap artifact
         run: |
           version="${GITHUB_REF_NAME#v}"
-          mv "${{ steps.build.outputs.snap }}" "pkgtui_${version}_amd64.snap"
-          echo "SNAP_FILE=pkgtui_${version}_amd64.snap" >> "$GITHUB_ENV"
+          src="${{ steps.build.outputs.snap }}"
+          dest="pkgtui_${version}_amd64.snap"
+          # snapcraft's output name can already match our target name
+          # (e.g. when snapcraft.yaml's version happens to equal the tag),
+          # in which case src and dest are the same file and `mv` errors.
+          if [ "$src" != "$dest" ]; then
+            mv "$src" "$dest"
+          fi
+          echo "SNAP_FILE=${dest}" >> "$GITHUB_ENV"
 
       - name: Attach snap to the release created by goreleaser
         env:

@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -26,6 +27,31 @@ func statusBullet(s pkg.Status) (string, lipgloss.Style) {
 	default:
 		return "○", statusAvailableStyle
 	}
+}
+
+// legendStatuses lists every status a row can show, in the order the legend
+// should display them. statusBullet is the single source of truth for the
+// symbol/color of each, so the legend can never drift out of sync with the
+// actual list rendering.
+var legendStatuses = []struct {
+	status pkg.Status
+	label  string
+}{
+	{pkg.StatusInstalled, "installed"},
+	{pkg.StatusUpgradable, "upgrade available"},
+	{pkg.StatusAvailable, "not installed"},
+}
+
+// legendLine renders a one-line "symbol meaning" key, e.g.:
+//
+//	● installed   ▲ upgrade available   ○ not installed
+func legendLine() string {
+	parts := make([]string, len(legendStatuses))
+	for i, s := range legendStatuses {
+		symbol, style := statusBullet(s.status)
+		parts[i] = style.Render(symbol) + " " + dimStyle.Render(s.label)
+	}
+	return strings.Join(parts, dimStyle.Render("   "))
 }
 
 // itemDelegate renders each row as:

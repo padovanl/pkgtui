@@ -1,6 +1,9 @@
 name: pkgtui
 base: core22
-version: "0.1.0"
+# The version is set dynamically from `git describe` by the pkgtui part's
+# override-pull below (adopt-info), so it never goes stale across releases.
+adopt-info: pkgtui
+title: pkgtui
 summary: An htop-style TUI to search/install/remove apt and snap packages
 description: |
   pkgtui is a terminal UI (TUI) in the style of htop for searching,
@@ -12,6 +15,11 @@ description: |
   published on the Snap Store, but installed locally with:
 
     snap install --dangerous --classic pkgtui_<version>_<arch>.snap
+contact: https://github.com/padovanl/pkgtui/issues
+issues: https://github.com/padovanl/pkgtui/issues
+source-code: https://github.com/padovanl/pkgtui
+website: https://github.com/padovanl/pkgtui
+license: MIT
 
 grade: stable
 confinement: classic
@@ -26,3 +34,11 @@ parts:
     source: .
     build-snaps:
       - go/1.24/stable
+    # pkgtui is a statically linked Go binary (CGO_ENABLED=0): it has no
+    # shared library dependencies for patchelf to fix up, so skip it to
+    # silence the classic-confinement ELF interpreter/rpath lint warnings.
+    build-attributes:
+      - no-patchelf
+    override-pull: |
+      craftctl default
+      craftctl set version="$(git -C "$CRAFT_PART_SRC" describe --tags --always --dirty)"

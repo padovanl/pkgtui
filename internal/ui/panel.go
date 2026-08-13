@@ -40,6 +40,7 @@ const (
 	screenList screen = iota
 	screenDetail
 	screenConfirm
+	screenHelp
 )
 
 // pendingAction holds a destructive/privileged action awaiting user
@@ -198,12 +199,13 @@ func (p *Panel) setItems(pkgs []pkg.Package) {
 func (p *Panel) setSize(w, h int) {
 	p.width, p.height = w, h
 	headerH := 1
+	legendH := 1
 	searchH := 0
 	if p.mode == viewSearch {
 		searchH = 3
 	}
 	statusH := 1
-	listH := h - headerH - searchH - statusH
+	listH := h - headerH - legendH - searchH - statusH
 	if listH < 3 {
 		listH = 3
 	}
@@ -284,6 +286,14 @@ func (p *Panel) handleKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
 		return p, nil
 	}
 
+	if p.screen == screenHelp {
+		switch {
+		case key.Matches(msg, keys.Escape), key.Matches(msg, keys.Enter), key.Matches(msg, keys.Help):
+			p.screen = screenList
+		}
+		return p, nil
+	}
+
 	if p.screen == screenDetail {
 		switch {
 		case key.Matches(msg, keys.Escape), key.Matches(msg, keys.Enter):
@@ -317,6 +327,9 @@ func (p *Panel) handleKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
 	}
 
 	switch {
+	case key.Matches(msg, keys.Help):
+		p.screen = screenHelp
+		return p, nil
 	case key.Matches(msg, keys.Search):
 		p.mode = viewSearch
 		p.search.Focus()
@@ -469,6 +482,10 @@ func (p *Panel) startSync() (*Panel, tea.Cmd) {
 	return p, nil
 }
 
+// SupportsSync reports whether the "s" sync-cache action does anything for
+// this backend, so the root App can hide the hint when it wouldn't (snap).
+func (p *Panel) SupportsSync() bool { return p.mgr.UpdateCmd() != nil }
+
 func (p *Panel) executeConfirmedAction() (*Panel, tea.Cmd) {
 	pending := p.pending
 	p.pending = nil
@@ -503,8 +520,13 @@ func (p *Panel) View() string {
 		)
 	}
 
+	if p.screen == screenHelp {
+		return p.renderHelp()
+	}
+
 	var sections []string
 	sections = append(sections, p.renderHeader())
+	sections = append(sections, legendLine())
 	if p.mode == viewSearch {
 		sections = append(sections, searchBoxStyle.Width(maxInt(p.width-4, 10)).Render(p.search.View()))
 	}
@@ -531,6 +553,41 @@ func (p *Panel) View() string {
 	}
 
 	return content
+}
+
+func (p *Panel) renderHelp() string {
+	keyStyle := lipgloss.NewStyle().Bold(true).Foreground(colorHighlight).Width(14)
+	row := func(k, desc string) string {
+		return keyStyle.Render(k) + dimStyle.Render(desc)
+	}
+
+	body := lipgloss.JoinVertical(lipgloss.Left,
+		titleStyle.Render("pkgtui — help"),
+		"",
+		helpSectionStyle.Render("Navigation"),
+		row("← / →", "switch backend (apt / snap)"),
+		row("tab", "switch view (Installed / Upgradable / Search)"),
+		row("↑/↓, j/k", "move selection"),
+		row("/", "search, then enter to run it"),
+		row("enter", "package details"),
+		row("esc", "back"),
+		"",
+		helpSectionStyle.Render("Actions"),
+		row("i", "install selected package"),
+		row("d", "remove selected package"),
+		row("u", "upgrade selected package"),
+		row("U", "upgrade ALL packages on this backend"),
+		row("s", "sync package cache (apt only)"),
+		row("y / n", "confirm / cancel a pending action"),
+		"",
+		helpSectionStyle.Render("Status symbols"),
+		"  "+legendLine(),
+		"",
+		row("q", "quit"),
+		row("?", "close this help"),
+	)
+
+	return lipgloss.Place(p.width, p.height, lipgloss.Center, lipgloss.Center, helpBoxStyle.Render(body))
 }
 
 func maxInt(a, b int) int {

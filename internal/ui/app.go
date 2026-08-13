@@ -105,9 +105,12 @@ func (a *App) renderFooter() string {
 	p := a.activePanel()
 	hints := []key.Binding{keys.NextBackend, keys.Tab, keys.Search, keys.Enter}
 	if p.screen == screenList && !p.search.Focused() {
-		hints = append(hints, keys.Install, keys.Remove, keys.Upgrade, keys.UpgradeAll, keys.Sync)
+		hints = append(hints, keys.Install, keys.Remove, keys.Upgrade, keys.UpgradeAll)
+		if p.SupportsSync() {
+			hints = append(hints, keys.Sync)
+		}
 	}
-	hints = append(hints, keys.Quit)
+	hints = append(hints, keys.Help, keys.Quit)
 
 	var s string
 	for _, h := range hints {

@@ -19,6 +19,7 @@ type keyMap struct {
 	Quit        key.Binding
 	Confirm     key.Binding
 	Cancel      key.Binding
+	Help        key.Binding
 }
 
 var keys = keyMap{
@@ -38,4 +39,5 @@ var keys = keyMap{
 	Quit:        key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 	Confirm:     key.NewBinding(key.WithKeys("y", "Y"), key.WithHelp("y", "confirm")),
 	Cancel:      key.NewBinding(key.WithKeys("n", "N", "esc"), key.WithHelp("n", "cancel")),
+	Help:        key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 }

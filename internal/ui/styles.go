@@ -66,6 +66,13 @@ var (
 			Padding(1, 2).
 			Bold(true)
 
+	helpBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorHighlight).
+			Padding(1, 3)
+
+	helpSectionStyle = lipgloss.NewStyle().Bold(true).Foreground(colorHighlight)
+
 	spinnerStyle = lipgloss.NewStyle().Foreground(colorHighlight)
 
 	errorStyle = lipgloss.NewStyle().Foreground(colorDanger).Bold(true)
