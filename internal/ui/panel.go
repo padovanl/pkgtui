@@ -1298,7 +1298,6 @@ func (p *Panel) renderHelp() string {
 		"",
 		helpSectionStyle.Render("Status symbols"),
 		"  "+legendLine(),
-		dimStyle.Render("  red bullet: security update    [held]: upgrades blocked"),
 		"",
 		row(",", "settings (theme, keybindings)"),
 		row("q", "quit"),

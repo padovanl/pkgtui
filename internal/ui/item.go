@@ -32,27 +32,43 @@ func statusBullet(s pkg.Status) (string, lipgloss.Style) {
 	}
 }
 
-// legendStatuses lists every status a row can show, in the order the legend
-// should display them. statusBullet is the single source of truth for the
-// symbol/color of each, so the legend can never drift out of sync with the
-// actual list rendering.
-var legendStatuses = []struct {
-	status pkg.Status
+// heldSymbol marks a package pinned against upgrades (apt-mark hold).
+// Diamond deliberately doesn't belong to the ●/▲/○ status-bullet family:
+// held is orthogonal to status (a held package is still installed, or
+// still upgradable-but-blocked), not a fourth status of its own.
+const heldSymbol = "◆"
+
+// legendEntry is one "symbol: meaning" pair shown in the legend and the
+// help screen. Building both the row rendering and the legend from the
+// same symbol/style values (statusBullet, securityMarkStyle, heldMarkStyle)
+// keeps them from silently drifting apart.
+type legendEntry struct {
+	symbol string
+	style  lipgloss.Style
 	label  string
-}{
-	{pkg.StatusInstalled, "installed"},
-	{pkg.StatusUpgradable, "upgrade available"},
-	{pkg.StatusAvailable, "not installed"},
+}
+
+func legendEntries() []legendEntry {
+	installed, installedStyle := statusBullet(pkg.StatusInstalled)
+	upgradable, upgradableStyle := statusBullet(pkg.StatusUpgradable)
+	available, availableStyle := statusBullet(pkg.StatusAvailable)
+	return []legendEntry{
+		{installed, installedStyle, "installed"},
+		{upgradable, upgradableStyle, "upgrade available"},
+		{upgradable, securityMarkStyle, "security update"},
+		{available, availableStyle, "not installed"},
+		{heldSymbol, heldMarkStyle, "held (upgrades blocked)"},
+	}
 }
 
 // legendLine renders a one-line "symbol meaning" key, e.g.:
 //
-//	● installed   ▲ upgrade available   ○ not installed
+//	● installed   ▲ upgrade available   ▲ security update   ○ not installed   ◆ held (upgrades blocked)
 func legendLine() string {
-	parts := make([]string, len(legendStatuses))
-	for i, s := range legendStatuses {
-		symbol, style := statusBullet(s.status)
-		parts[i] = style.Render(symbol) + " " + dimStyle.Render(s.label)
+	entries := legendEntries()
+	parts := make([]string, len(entries))
+	for i, e := range entries {
+		parts[i] = e.style.Render(e.symbol) + " " + dimStyle.Render(e.label)
 	}
 	return strings.Join(parts, dimStyle.Render("   "))
 }
@@ -100,10 +116,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		bulletStyle = securityMarkStyle
 	}
 
-	mark := "  "
-	if d.tagged[it.p.Name] {
-		mark = tagMarkStyle.Render("✓ ")
-	}
+	tagged := d.tagged[it.p.Name]
 
 	version := it.p.Version
 	if it.p.Status != pkg.StatusAvailable {
@@ -126,30 +139,47 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		version = version[:versionW-1] + "…"
 	}
 
-	summary := it.p.Summary
-	line := fmt.Sprintf("%s%s %-*s %-*s %s",
-		mark,
-		bulletStyle.Render(bullet),
-		nameW, name,
-		versionW, version,
-		summary,
-	)
+	held := ""
 	if it.p.Held {
-		line += heldMarkStyle.Render(" [held]")
+		held = " " + heldSymbol
 	}
 
-	maxW := m.Width() - 2
-	if maxW > 0 && lipgloss.Width(line) > maxW {
-		line = truncateANSI(line, maxW)
-	}
+	selected := index == m.Index()
 
-	if index == m.Index() {
-		line = lipgloss.NewStyle().
-			Background(lipgloss.Color("237")).
-			Foreground(colorFg).
-			Bold(true).
-			Width(m.Width() - 2).
-			Render(line)
+	var line string
+	if selected {
+		// One single styled span for the whole row: a per-segment colored
+		// bullet/tag-mark (see the else branch) each carries their own
+		// ANSI reset, which would cut the background highlight off right
+		// after the bullet instead of covering the full row width.
+		mark := "  "
+		if tagged {
+			mark = "✓ "
+		}
+		plain := fmt.Sprintf("%s%s %-*s %-*s %s%s", mark, bullet, nameW, name, versionW, version, it.p.Summary, held)
+		if maxW := m.Width() - 2; maxW > 0 && lipgloss.Width(plain) > maxW {
+			plain = truncateANSI(plain, maxW)
+		}
+		line = selectedRowStyle.Width(maxInt(m.Width()-2, 0)).Render(plain)
+	} else {
+		mark := "  "
+		if tagged {
+			mark = tagMarkStyle.Render("✓ ")
+		}
+		line = fmt.Sprintf("%s%s %-*s %-*s %s",
+			mark,
+			bulletStyle.Render(bullet),
+			nameW, name,
+			versionW, version,
+			it.p.Summary,
+		)
+		if it.p.Held {
+			line += heldMarkStyle.Render(held)
+		}
+		maxW := m.Width() - 2
+		if maxW > 0 && lipgloss.Width(line) > maxW {
+			line = truncateANSI(line, maxW)
+		}
 	}
 
 	fmt.Fprint(w, line)
