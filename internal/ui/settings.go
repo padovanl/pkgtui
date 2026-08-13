@@ -31,6 +31,17 @@ func displayKey(k string) string {
 
 func (s *settingsScreen) rowCount() int { return 1 + len(rebindableKeys()) }
 
+// cycleTheme moves delta steps through ThemeNames (wrapping both ways) and
+// applies the result immediately, so every visible screen — including this
+// settings box itself — re-skins live as you browse, instead of only
+// showing the change after leaving the settings screen.
+func (s *settingsScreen) cycleTheme(delta int) {
+	names := ThemeNames()
+	idx := (themeIndex() + delta + len(names)) % len(names)
+	ApplyTheme(names[idx])
+	s.statusMsg = fmt.Sprintf("theme: %s (%d/%d)", CurrentTheme(), idx+1, len(names))
+}
+
 // handleKey processes one keypress. changed reports whether persisted state
 // (theme or a keybinding) actually changed, so the caller knows to save.
 func (s *settingsScreen) handleKey(msg tea.KeyMsg) (changed bool) {
@@ -59,17 +70,19 @@ func (s *settingsScreen) handleKey(msg tea.KeyMsg) (changed bool) {
 		if s.cursor < s.rowCount()-1 {
 			s.cursor++
 		}
+	case key.Matches(msg, keys.PrevBackend):
+		if s.cursor == 0 {
+			s.cycleTheme(-1)
+			return true
+		}
+	case key.Matches(msg, keys.NextBackend):
+		if s.cursor == 0 {
+			s.cycleTheme(1)
+			return true
+		}
 	case key.Matches(msg, keys.Enter):
 		if s.cursor == 0 {
-			names := ThemeNames()
-			idx := 0
-			for i, n := range names {
-				if n == CurrentTheme() {
-					idx = i
-				}
-			}
-			ApplyTheme(names[(idx+1)%len(names)])
-			s.statusMsg = "theme: " + CurrentTheme()
+			s.cycleTheme(1)
 			return true
 		}
 		s.capturing = true
@@ -82,7 +95,7 @@ func (s *settingsScreen) View(width, height int) string {
 	rows := []string{
 		titleStyle.Render("pkgtui — settings"),
 		"",
-		s.row(0, fmt.Sprintf("Theme: %s", CurrentTheme()), "enter to cycle"),
+		s.row(0, fmt.Sprintf("Theme: %s", CurrentTheme()), fmt.Sprintf("%d/%d", themeIndex()+1, len(ThemeNames()))),
 		"",
 		helpSectionStyle.Render("Keybindings (enter to rebind)"),
 	}
@@ -93,7 +106,11 @@ func (s *settingsScreen) View(width, height int) string {
 		}
 		rows = append(rows, s.row(i+1, e.label, k))
 	}
-	rows = append(rows, "", dimStyle.Render(s.statusMsg), "", dimStyle.Render("↑/↓ move   enter select/rebind   esc close"))
+	hint := "↑/↓ move   enter select/rebind   esc close"
+	if s.cursor == 0 {
+		hint = "↑/↓ move   ←/→ browse themes   esc close"
+	}
+	rows = append(rows, "", dimStyle.Render(s.statusMsg), "", dimStyle.Render(hint))
 
 	body := lipgloss.JoinVertical(lipgloss.Left, rows...)
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, helpBoxStyle.Render(body))

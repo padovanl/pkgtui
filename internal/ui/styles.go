@@ -63,6 +63,17 @@ var currentTheme = "default"
 // CurrentTheme returns the active theme's name.
 func CurrentTheme() string { return currentTheme }
 
+// themeIndex returns CurrentTheme's position in ThemeNames, for progress
+// display ("2/5") while browsing themes in the settings screen.
+func themeIndex() int {
+	for i, n := range ThemeNames() {
+		if n == currentTheme {
+			return i
+		}
+	}
+	return 0
+}
+
 // ApplyTheme switches the active color palette and rebuilds every derived
 // style, so already-open screens pick it up on their next render. Unknown
 // names are ignored (returns false).

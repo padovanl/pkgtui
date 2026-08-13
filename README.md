@@ -49,8 +49,10 @@ remember the syntax of either package manager.
 - **PPA management (apt)**: list, add and remove third-party repositories
   from inside the TUI, gated behind an explicit warning since a bad PPA
   can break `apt update` for the whole system.
-- **Settings screen**: cycle between built-in color themes and rebind any
-  action key, live, from inside the app — no config file editing required
+- **Settings screen**: browse the 5 built-in color themes with `←`/`→`
+  (the whole UI re-skins live as you move, no need to commit to one to see
+  it) and rebind any action key, live, from inside the app — no config
+  file editing required
   (though it's saved to one).
 - **Remembers where you left off**: backend and view are restored on the
   next launch.
@@ -177,7 +179,13 @@ normally no need to edit it by hand, but it's plain JSON if you want to.
 - Linux with `apt`/`dpkg` and/or `snapd` installed (having just one of the
   two is fine: the other tab simply reports "not available").
 - `sudo` configured for the current user, for privileged operations.
-- Go 1.24+ only if building from source.
+- Go 1.24+ only if building from source (fetching Go modules needs
+  internet; the compiled binary itself doesn't).
+- Internet access for anything that reaches an actual package repository
+  or catalog — search, install, upgrade, changelog. Browsing what's
+  already installed or upgradable works fully offline. pkgtui makes no
+  network calls of its own; this is exactly the same requirement `apt`
+  and `snap` have on their own.
 
 ## 🤝 Contributing
 
