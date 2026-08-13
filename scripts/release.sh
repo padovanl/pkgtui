@@ -31,7 +31,13 @@ echo "Fetching origin..."
 git fetch origin --quiet --tags main
 
 if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
-	echo "error: local main differs from origin/main; push or pull first" >&2
+	ahead="$(git rev-list --count origin/main..HEAD)"
+	behind="$(git rev-list --count HEAD..origin/main)"
+	if [ "$behind" != "0" ]; then
+		echo "error: local main is behind origin/main by ${behind} commit(s); run 'git pull origin main'" >&2
+	else
+		echo "error: local main is ahead of origin/main by ${ahead} commit(s); run 'git push origin main'" >&2
+	fi
 	exit 1
 fi
 
