@@ -42,6 +42,18 @@ var palettes = map[string]palette{
 		bg: "235", fg: "223", accent: "142", warn: "214",
 		danger: "167", muted: "245", highlight: "109",
 	},
+	"catppuccin": {
+		bg: "235", fg: "189", accent: "151", warn: "223",
+		danger: "210", muted: "245", highlight: "183",
+	},
+	"tokyo-night": {
+		bg: "235", fg: "195", accent: "149", warn: "179",
+		danger: "204", muted: "245", highlight: "111",
+	},
+	"monokai": {
+		bg: "235", fg: "255", accent: "154", warn: "221",
+		danger: "197", muted: "245", highlight: "80",
+	},
 }
 
 // colorBadgeText is the foreground for text on a colored badge (active tab,
@@ -55,7 +67,7 @@ var colorBadgeText = lipgloss.Color("0")
 // ThemeNames lists built-in themes in a stable order, for cycling in the
 // settings screen.
 func ThemeNames() []string {
-	return []string{"default", "dracula", "nord", "solarized", "gruvbox"}
+	return []string{"default", "dracula", "nord", "solarized", "gruvbox", "catppuccin", "tokyo-night", "monokai"}
 }
 
 var currentTheme = "default"

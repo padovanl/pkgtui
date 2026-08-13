@@ -20,6 +20,9 @@ PALETTES = {
     "nord":      dict(fg="251", accent="108", warn="222", danger="167", muted="245", highlight="110"),
     "solarized": dict(fg="244", accent="70",  warn="136", danger="196", muted="245", highlight="45"),
     "gruvbox":   dict(fg="223", accent="142", warn="214", danger="167", muted="245", highlight="109"),
+    "catppuccin":  dict(fg="189", accent="151", warn="223", danger="210", muted="245", highlight="183"),
+    "tokyo-night": dict(fg="195", accent="149", warn="179", danger="204", muted="245", highlight="111"),
+    "monokai":     dict(fg="255", accent="154", warn="221", danger="197", muted="245", highlight="80"),
 }
 BADGE_TEXT = "0"     # colorBadgeText: text on accent/highlight/danger badges
 TERMINAL_BG = "235"  # stand-in for a typical dark terminal background
