@@ -131,3 +131,155 @@ func TestUpgradeCmdUpgradesAllUsesDistUpgrade(t *testing.T) {
 		t.Errorf("UpgradeCmd(\"\") = %v, want it to end with %v", got, want)
 	}
 }
+
+func TestParseResidualConfigOutput(t *testing.T) {
+	out := "curl\t7.81.0-1ubuntu1.25\t566\tinstall ok installed\n" +
+		"leftover-conffiles\t1.0\t3\tdeinstall ok config-files\n" +
+		"another-leftover\t2.0\t0\tdeinstall ok config-files\n"
+
+	got := parseResidualConfigOutput(out)
+	want := map[string]dpkgEntry{
+		"leftover-conffiles": {Version: "1.0", SizeKB: 3},
+		"another-leftover":   {Version: "2.0", SizeKB: 0},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("parseResidualConfigOutput() = %#v, want %#v", got, want)
+	}
+}
+
+func TestKernelVersionKeyStripsFlavor(t *testing.T) {
+	cases := map[string]string{
+		"5.15.0-91-generic": "5.15.0",
+		"5.15.0-91":         "5.15.0",
+		"6.8.0-40-generic":  "6.8.0",
+	}
+	for in, want := range cases {
+		if got := kernelVersionKey(in); got != want {
+			t.Errorf("kernelVersionKey(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestKernelVersionLessComparesNumerically(t *testing.T) {
+	// A plain string compare gets this backwards: "5.4.0" > "5.15.0"
+	// lexicographically, since '4' > '1'.
+	if !kernelVersionLess("5.4.0", "5.15.0") {
+		t.Error("kernelVersionLess(5.4.0, 5.15.0) = false, want true")
+	}
+	if kernelVersionLess("5.15.0", "5.4.0") {
+		t.Error("kernelVersionLess(5.15.0, 5.4.0) = true, want false")
+	}
+}
+
+// TestKernelDiskItemsKeepsRunningAndNewest guards the actual safety
+// property this feature exists for: never flag the kernel currently booted,
+// or the newest one installed, as reclaimable — only strictly older, not
+// currently running releases are safe to suggest purging.
+func TestKernelDiskItemsKeepsRunningAndNewest(t *testing.T) {
+	installed := map[string]dpkgEntry{
+		"linux-image-5.4.0-100-generic":   {SizeKB: 300000},
+		"linux-headers-5.4.0-100-generic": {SizeKB: 10000},
+		"linux-headers-5.4.0-100":         {SizeKB: 5000},
+		"linux-image-5.15.0-91-generic":   {SizeKB: 320000},
+		"linux-headers-5.15.0-91-generic": {SizeKB: 11000},
+		"linux-headers-5.15.0-91":         {SizeKB: 5000},
+		"linux-image-6.8.0-40-generic":    {SizeKB: 340000},
+		"linux-headers-6.8.0-40-generic":  {SizeKB: 12000},
+		"linux-headers-6.8.0-40":          {SizeKB: 5000},
+		"curl":                            {SizeKB: 500}, // not a kernel package, must be ignored
+	}
+	// Currently booted into the middle release, not the newest installed.
+	got := kernelDiskItems(installed, "5.15.0-91-generic")
+
+	gotNames := map[string]bool{}
+	for _, it := range got {
+		gotNames[it.Name] = true
+	}
+
+	for _, mustBeFlagged := range []string{
+		"linux-image-5.4.0-100-generic", "linux-headers-5.4.0-100-generic", "linux-headers-5.4.0-100",
+	} {
+		if !gotNames[mustBeFlagged] {
+			t.Errorf("kernelDiskItems() missing old-kernel package %q, got %v", mustBeFlagged, gotNames)
+		}
+	}
+	for _, mustNotBeFlagged := range []string{
+		"linux-image-5.15.0-91-generic", "linux-headers-5.15.0-91-generic", "linux-headers-5.15.0-91", // running
+		"linux-image-6.8.0-40-generic", "linux-headers-6.8.0-40-generic", "linux-headers-6.8.0-40", // newest
+		"curl",
+	} {
+		if gotNames[mustNotBeFlagged] {
+			t.Errorf("kernelDiskItems() wrongly flagged %q (running or newest kernel, or not a kernel package at all)", mustNotBeFlagged)
+		}
+	}
+}
+
+// TestKernelDiskItemsSingleKernelReportsNothing guards against flagging a
+// system's only installed kernel as "old" simply because there's nothing
+// newer to compare it against yet.
+func TestKernelDiskItemsSingleKernelReportsNothing(t *testing.T) {
+	installed := map[string]dpkgEntry{
+		"linux-image-6.8.0-40-generic": {SizeKB: 340000},
+	}
+	if got := kernelDiskItems(installed, "6.8.0-40-generic"); len(got) != 0 {
+		t.Errorf("kernelDiskItems() with a single installed kernel = %v, want empty", got)
+	}
+}
+
+func TestParseAutoUpgradesEnabled(t *testing.T) {
+	cases := map[string]bool{
+		`APT::Periodic::Update-Package-Lists "1";` + "\n" + `APT::Periodic::Unattended-Upgrade "1";`: true,
+		`APT::Periodic::Unattended-Upgrade "0";`:                                                     false,
+		`// nothing here`:                                                                            false,
+	}
+	for conf, want := range cases {
+		if got := parseAutoUpgradesEnabled(conf); got != want {
+			t.Errorf("parseAutoUpgradesEnabled(%q) = %v, want %v", conf, got, want)
+		}
+	}
+}
+
+func TestParseUnattendedUpgradesLog(t *testing.T) {
+	log := "2026-08-10 06:27:01,912 INFO Initial blacklisted packages: \n" +
+		"2026-08-10 06:27:02,146 INFO Allowed origins are: o=Ubuntu\n" +
+		"2026-08-10 06:27:03,001 INFO Packages that will be upgraded: libssl3 curl\n" +
+		"2026-08-10 06:27:15,552 INFO Writing dpkg log to /var/log/unattended-upgrades/unattended-upgrades-dpkg.log\n" +
+		"2026-08-11 06:27:03,001 INFO Packages that will be upgraded: bash\n"
+
+	ts, pkgs := parseUnattendedUpgradesLog(log)
+	// Must pick up the LAST matching run, not the first.
+	if ts != "2026-08-11 06:27:03" {
+		t.Errorf("timestamp = %q, want %q", ts, "2026-08-11 06:27:03")
+	}
+	if want := []string{"bash"}; !reflect.DeepEqual(pkgs, want) {
+		t.Errorf("packages = %v, want %v", pkgs, want)
+	}
+}
+
+func TestParseMadisonOutput(t *testing.T) {
+	out := " curl | 7.81.0-1ubuntu1.20 | http://archive.ubuntu.com/ubuntu jammy-updates/main amd64 Packages\n" +
+		" curl | 7.81.0-1ubuntu1 | http://archive.ubuntu.com/ubuntu jammy/main amd64 Packages\n" +
+		" curl | 7.81.0-1ubuntu1.20 | http://archive.ubuntu.com/ubuntu jammy-security/main amd64 Packages\n" + // same version via a second origin — must collapse, not duplicate
+		"garbage line with no separators\n"
+
+	got := parseMadisonOutput(out, "7.81.0-1ubuntu1")
+	if len(got) != 2 {
+		t.Fatalf("parseMadisonOutput() returned %d versions, want 2 (deduped): %#v", len(got), got)
+	}
+	if got[0].Version != "7.81.0-1ubuntu1.20" || got[0].Current {
+		t.Errorf("got[0] = %#v, want version 7.81.0-1ubuntu1.20, not current", got[0])
+	}
+	if got[1].Version != "7.81.0-1ubuntu1" || !got[1].Current {
+		t.Errorf("got[1] = %#v, want version 7.81.0-1ubuntu1, marked current", got[1])
+	}
+	if got[1].Origin == "" {
+		t.Error("got[1].Origin is empty, want the repo URL/component text")
+	}
+}
+
+func TestParseUnattendedUpgradesLogNoMatches(t *testing.T) {
+	ts, pkgs := parseUnattendedUpgradesLog("nothing relevant here\n")
+	if ts != "" || pkgs != nil {
+		t.Errorf("parseUnattendedUpgradesLog() = (%q, %v), want (\"\", nil)", ts, pkgs)
+	}
+}
