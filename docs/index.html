@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pkgtui — an htop-style TUI for apt and snap</title>
+<meta name="description" content="pkgtui is a terminal UI to search, install, remove and upgrade apt and snap packages from a single dashboard, in the style of htop.">
+<meta property="og:title" content="pkgtui">
+<meta property="og:description" content="An htop-style terminal UI for apt and snap package management.">
+<meta property="og:image" content="https://padovanl.github.io/pkgtui/social-preview.png">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 256 256%22><rect width=%22256%22 height=%22256%22 rx=%2256%22 fill=%22%231a1d24%22/><polygon points=%22128,52 191,89 128,126 65,89%22 fill=%22%235fe085%22/><polygon points=%2265,89 128,126 128,204 65,167%22 fill=%22%23167a40%22/><polygon points=%22191,89 128,126 128,204 191,167%22 fill=%22%2328a85c%22/></svg>">
+<style>
+  :root {
+    --bg: #16181d;
+    --bg-alt: #1c1f26;
+    --fg: #e7e9ee;
+    --dim: #8b93a3;
+    --accent: #5fe085;
+    --accent-dim: #2a9d5c;
+    --highlight: #4fa8f0;
+    --danger: #f0665f;
+    --border: #2c303a;
+    --mono: "SF Mono", "JetBrains Mono", Consolas, "Liberation Mono", Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans);
+    line-height: 1.6;
+  }
+  a { color: var(--highlight); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, pre {
+    font-family: var(--mono);
+    font-size: 0.92em;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 0 24px; }
+
+  header.hero {
+    padding: 88px 0 56px;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+  }
+  .logo {
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 20px;
+    display: block;
+    border-radius: 16px;
+  }
+  h1 {
+    font-size: 2.4rem;
+    margin: 0 0 10px;
+    letter-spacing: -0.02em;
+  }
+  h1 .pkg { color: var(--fg); }
+  h1 .tui { color: var(--accent); }
+  .tagline {
+    color: var(--dim);
+    font-size: 1.15rem;
+    max-width: 560px;
+    margin: 0 auto 30px;
+  }
+  .cta-row {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    border: 1px solid var(--border);
+  }
+  .btn.primary {
+    background: var(--accent);
+    color: #0e120f;
+    border-color: var(--accent);
+  }
+  .btn.primary:hover { background: #74ea97; text-decoration: none; }
+  .btn.secondary {
+    background: var(--bg-alt);
+    color: var(--fg);
+  }
+  .btn.secondary:hover { background: #22262f; text-decoration: none; }
+
+  .badges {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 26px;
+    flex-wrap: wrap;
+  }
+  .badges img { height: 20px; display: block; }
+
+  main { padding: 64px 0; }
+  section { margin-bottom: 76px; }
+  section:last-child { margin-bottom: 0; }
+
+  .demo-frame {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    background: #0b0c10;
+  }
+  .demo-frame img { display: block; width: 100%; height: auto; }
+  .demo-caption {
+    text-align: center;
+    color: var(--dim);
+    font-size: 0.9rem;
+    margin-top: 12px;
+  }
+
+  h2 {
+    font-size: 1.5rem;
+    margin: 0 0 28px;
+    text-align: center;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 20px;
+  }
+  .card {
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 22px;
+  }
+  .card h3 {
+    margin: 0 0 8px;
+    font-size: 1rem;
+    color: var(--accent);
+  }
+  .card p {
+    margin: 0;
+    color: var(--dim);
+    font-size: 0.92rem;
+  }
+
+  .install pre {
+    background: #0b0c10;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    overflow-x: auto;
+    color: #d3d7de;
+    margin: 0 0 10px;
+  }
+  .install-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .install-tab {
+    padding: 7px 14px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--bg-alt);
+    color: var(--dim);
+    font-size: 0.88rem;
+    cursor: pointer;
+    font-family: var(--sans);
+  }
+  .install-tab[aria-selected="true"] {
+    color: var(--fg);
+    border-color: var(--highlight);
+    background: #1a2530;
+  }
+  .install-panel { display: none; }
+  .install-panel.active { display: block; }
+  .comment { color: var(--dim); }
+  .str { color: var(--accent); }
+
+  .keys {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+  .keys th, .keys td {
+    text-align: left;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .keys th { color: var(--dim); font-weight: 600; }
+  .keys kbd {
+    font-family: var(--mono);
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 2px 7px;
+    color: var(--highlight);
+  }
+
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 36px 0 56px;
+    text-align: center;
+    color: var(--dim);
+    font-size: 0.88rem;
+  }
+  footer a { color: var(--dim); }
+  footer .sep { margin: 0 8px; opacity: 0.5; }
+
+  @media (max-width: 600px) {
+    header.hero { padding: 56px 0 40px; }
+    h1 { font-size: 1.9rem; }
+    main { padding: 44px 0; }
+    section { margin-bottom: 56px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <svg class="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+      <rect width="256" height="256" rx="56" fill="#1a1d24"/>
+      <polygon points="128,52 191,89 128,126 65,89" fill="#8ef2a0"/>
+      <polygon points="65,89 128,126 128,204 65,167" fill="#167a40"/>
+      <polygon points="191,89 128,126 128,204 191,167" fill="#28a85c"/>
+    </svg>
+    <h1><span class="pkg">pkg</span><span class="tui">tui</span></h1>
+    <p class="tagline">An htop-style terminal UI to search, install, remove and upgrade
+      <strong>apt</strong> and <strong>snap</strong> packages, from a single dashboard.</p>
+    <div class="cta-row">
+      <a class="btn primary" href="https://github.com/padovanl/pkgtui#-installation">Get pkgtui</a>
+      <a class="btn secondary" href="https://github.com/padovanl/pkgtui">View on GitHub</a>
+    </div>
+    <div class="badges">
+      <a href="https://github.com/padovanl/pkgtui/releases/latest"><img src="https://img.shields.io/github/v/release/padovanl/pkgtui?sort=semver" alt="Latest release"></a>
+      <a href="https://github.com/padovanl/pkgtui/actions/workflows/ci.yml"><img src="https://github.com/padovanl/pkgtui/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+      <a href="https://github.com/padovanl/pkgtui/blob/main/LICENSE"><img src="https://img.shields.io/github/license/padovanl/pkgtui" alt="License: MIT"></a>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section id="demo">
+      <div class="demo-frame">
+        <img src="https://raw.githubusercontent.com/padovanl/pkgtui/main/assets/demo.gif" alt="pkgtui apt demo" loading="lazy">
+      </div>
+      <p class="demo-caption">Searching, inspecting and installing an apt package, live.</p>
+    </section>
+
+    <section id="features">
+      <h2>Why pkgtui</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Two backends, one dashboard</h3>
+          <p>Dedicated tabs for apt and snap, each with its own state. Search, filter, sort by size, view reverse dependencies.</p>
+        </div>
+        <div class="card">
+          <h3>Real live output</h3>
+          <p>Install/remove/upgrade run in a real pseudo-terminal, shown live in a bordered box. sudo prompts and debconf dialogs work exactly as they would from the command line.</p>
+        </div>
+        <div class="card">
+          <h3>Upgrade all, with a preview</h3>
+          <p>See exactly which packages will change, security updates called out separately, before you confirm anything.</p>
+        </div>
+        <div class="card">
+          <h3>11 built-in themes</h3>
+          <p>From classic Dracula, Nord and Gruvbox to Catppuccin, Tokyo Night and Ubuntu's own palette. Browse them live, no restart needed.</p>
+        </div>
+        <div class="card">
+          <h3>Rebind every key</h3>
+          <p>Change any shortcut from inside the app, live, with a one-key reset back to defaults if it goes sideways.</p>
+        </div>
+        <div class="card">
+          <h3>PPA &amp; changelog aware</h3>
+          <p>Manage third-party repositories and read a package's changelog before upgrading it, without leaving the TUI.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="demo-snap">
+      <div class="demo-frame">
+        <img src="https://raw.githubusercontent.com/padovanl/pkgtui/main/assets/demo-snap.gif" alt="pkgtui snap demo" loading="lazy">
+      </div>
+      <p class="demo-caption">Same flow on snap, including the channel picker.</p>
+    </section>
+
+    <section id="install" class="install">
+      <h2>Installation</h2>
+      <div class="install-tabs" role="tablist">
+        <button class="install-tab" role="tab" aria-selected="true" data-target="tab-deb">.deb</button>
+        <button class="install-tab" role="tab" aria-selected="false" data-target="tab-snap">.snap</button>
+        <button class="install-tab" role="tab" aria-selected="false" data-target="tab-bin">binary</button>
+        <button class="install-tab" role="tab" aria-selected="false" data-target="tab-src">from source</button>
+      </div>
+      <div id="tab-deb" class="install-panel active">
+        <pre><span class="comment"># replace &lt;version&gt; with the latest release number, no leading "v"</span>
+curl -fLO https://github.com/padovanl/pkgtui/releases/latest/download/pkgtui_&lt;version&gt;_amd64.deb
+sudo apt install ./pkgtui_&lt;version&gt;_amd64.deb</pre>
+      </div>
+      <div id="tab-snap" class="install-panel">
+        <pre><span class="comment"># side-loaded, classic confinement — not on the Snap Store</span>
+curl -fLO https://github.com/padovanl/pkgtui/releases/latest/download/pkgtui_&lt;version&gt;_amd64.snap
+sudo snap install --dangerous --classic pkgtui_&lt;version&gt;_amd64.snap</pre>
+      </div>
+      <div id="tab-bin" class="install-panel">
+        <pre>curl -fLO https://github.com/padovanl/pkgtui/releases/latest/download/pkgtui_&lt;version&gt;_linux_amd64.tar.gz
+tar -xzf pkgtui_&lt;version&gt;_linux_amd64.tar.gz
+sudo mv pkgtui /usr/local/bin/</pre>
+      </div>
+      <div id="tab-src" class="install-panel">
+        <pre>git clone https://github.com/padovanl/pkgtui.git
+cd pkgtui
+go build -o pkgtui .
+sudo mv pkgtui /usr/local/bin/</pre>
+      </div>
+      <p style="color:var(--dim); font-size:0.88rem;">Full instructions, checksums and arm64 builds on the <a href="https://github.com/padovanl/pkgtui/releases/latest">releases page</a>.</p>
+    </section>
+
+    <section id="usage">
+      <h2>A few keys to get started</h2>
+      <table class="keys">
+        <tr><th>Key</th><th>Action</th></tr>
+        <tr><td><kbd>/</kbd></td><td>Search the full apt/snap catalog</td></tr>
+        <tr><td><kbd>i</kbd> / <kbd>d</kbd> / <kbd>u</kbd></td><td>Install / remove / upgrade the selected package</td></tr>
+        <tr><td><kbd>U</kbd></td><td>Upgrade all, with a preview first</td></tr>
+        <tr><td><kbd>,</kbd></td><td>Settings: themes, keybindings</td></tr>
+        <tr><td><kbd>?</kbd></td><td>Full keybinding reference</td></tr>
+      </table>
+      <p style="color:var(--dim); font-size:0.88rem; margin-top: 14px;">
+        See the <a href="https://github.com/padovanl/pkgtui#%EF%B8%8F-usage">full keybinding table</a> in the README.
+      </p>
+    </section>
+
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <a href="https://github.com/padovanl/pkgtui">GitHub</a>
+    <span class="sep">·</span>
+    <a href="https://github.com/padovanl/pkgtui/releases">Releases</a>
+    <span class="sep">·</span>
+    <a href="https://github.com/padovanl/pkgtui/issues">Issues</a>
+    <span class="sep">·</span>
+    <a href="https://github.com/padovanl/pkgtui/blob/main/LICENSE">MIT License</a>
+  </div>
+</footer>
+
+<script>
+  document.querySelectorAll('.install-tab').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      document.querySelectorAll('.install-tab').forEach(function (t) { t.setAttribute('aria-selected', 'false'); });
+      document.querySelectorAll('.install-panel').forEach(function (p) { p.classList.remove('active'); });
+      tab.setAttribute('aria-selected', 'true');
+      document.getElementById(tab.dataset.target).classList.add('active');
+    });
+  });
+</script>
+
+</body>
+</html>
