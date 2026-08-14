@@ -135,21 +135,11 @@ func (s *settingsScreen) View(width, height int) string {
 	rows = append(rows, "")
 	add(s.resetRow(), s.row(s.resetRow(), "Reset keybindings to defaults", ""))
 
-	// +6 for the outer title line, hint line, and the box's own
+	// -6 for the outer title line, hint line, and the box's own
 	// border+padding (2+2) — see the matching comment on Panel.setSize,
 	// which sizes its own scrollable screens (detail/changelog/help) the
 	// same way for the exact same reason.
-	visible := rows
-	if boxHeight := maxInt(height-6, 3); len(rows) > boxHeight {
-		start := cursorLine - boxHeight/2
-		if start < 0 {
-			start = 0
-		}
-		if max := len(rows) - boxHeight; start > max {
-			start = max
-		}
-		visible = rows[start : start+boxHeight]
-	}
+	visible := clampToWindow(rows, cursorLine, maxInt(height-6, 3))
 
 	hint := "↑/↓ move   enter select/rebind   esc close"
 	switch s.cursor {

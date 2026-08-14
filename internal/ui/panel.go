@@ -1807,9 +1807,14 @@ func (p *Panel) renderDisk() string {
 	if len(p.diskItems) == 0 && !p.loading {
 		sections = append(sections, dimStyle.Render("Nothing to reclaim — no old kernels, leftover configs, or disabled revisions found."))
 	}
+	var rows []string
 	for i, it := range p.diskItems {
-		sections = append(sections, p.diskRow(it, i == p.diskCursor))
+		rows = append(rows, p.diskRow(it, i == p.diskCursor))
 	}
+	// -4: title, status line, hint, plus a little margin — see
+	// clampToWindow.
+	listHeight := maxInt(p.height-4, 3)
+	sections = append(sections, clampToWindow(rows, p.diskCursor, listHeight)...)
 
 	var status string
 	switch {
@@ -1826,6 +1831,28 @@ func (p *Panel) renderDisk() string {
 	sections = append(sections, dimStyle.Render("d/r: purge selected   esc: back"))
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+}
+
+// clampToWindow returns a scroll-windowed slice of rows containing
+// cursorIdx, sized to at most height entries — the same "keep the
+// selection in view without ever rendering more rows than the terminal can
+// show" fix settingsScreen.View() already uses. Without it, a package with
+// enough reverse dependencies (or a system with enough disk-cleanup
+// findings) renders an unbounded list that overflows the terminal and
+// pushes whatever's above it — including this screen's own title — off
+// the top, with no scroll indicator to say so.
+func clampToWindow(rows []string, cursorIdx, height int) []string {
+	if height <= 0 || len(rows) <= height {
+		return rows
+	}
+	start := cursorIdx - height/2
+	if start < 0 {
+		start = 0
+	}
+	if max := len(rows) - height; start > max {
+		start = max
+	}
+	return rows[start : start+height]
 }
 
 func (p *Panel) renderProvenance() string {
@@ -1845,6 +1872,7 @@ func (p *Panel) renderProvenance() string {
 		sections = append(sections, dimStyle.Render("Nothing else currently depends on it."))
 	default:
 		sections = append(sections, helpSectionStyle.Render(fmt.Sprintf("Depended on by (%d) — enter to drill in:", len(p.provenance.ReverseDeps))))
+		var rows []string
 		for i, name := range p.provenance.ReverseDeps {
 			line := "  " + name
 			maxW := maxInt(p.width-2, 0)
@@ -1854,8 +1882,12 @@ func (p *Panel) renderProvenance() string {
 			if i == p.provenanceCursor {
 				line = lipgloss.NewStyle().Background(lipgloss.Color("237")).Foreground(colorFg).Bold(true).Width(maxW).Render(line)
 			}
-			sections = append(sections, line)
+			rows = append(rows, line)
 		}
+		// -8: title, reason, blank, section header, blank-before-hint,
+		// hint, plus a little margin for the optional error line below.
+		listHeight := maxInt(p.height-8, 3)
+		sections = append(sections, clampToWindow(rows, p.provenanceCursor, listHeight)...)
 	}
 
 	if p.err != nil {

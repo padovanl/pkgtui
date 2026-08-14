@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -287,6 +288,66 @@ func TestRevertGoesStraightToConfirm(t *testing.T) {
 	wantArgv := []string{"snap", "revert", "firefox"}
 	if !reflect.DeepEqual(p.pending.argv, wantArgv) {
 		t.Errorf("pending.argv = %v, want %v", p.pending.argv, wantArgv)
+	}
+}
+
+// TestProvenanceListScrollsWithManyReverseDeps guards a bug reported live:
+// a package with enough reverse dependencies (cyrus-common, in the wild)
+// rendered every single one unconditionally, with no height bound at all —
+// the exact same overflow class as the help/settings screens, just missed
+// there because those had regression tests and this screen didn't. The
+// title (and the cursor's own row) must stay visible regardless of how
+// long the underlying list actually is.
+func TestProvenanceListScrollsWithManyReverseDeps(t *testing.T) {
+	const termHeight = 30
+
+	names := make([]string, 60)
+	for i := range names {
+		names[i] = fmt.Sprintf("some-reverse-dep-%02d", i)
+	}
+
+	p := NewPanel(fakeManager{})
+	p.setSize(100, termHeight)
+	p.screen = screenProvenance
+	p.provenanceName = "cyrus-common"
+	p.provenance = pkg.Provenance{ReverseDeps: names}
+	p.provenanceCursor = 45 // deep into the list, not just the first screenful
+
+	lines := strings.Split(p.View(), "\n")
+	if len(lines) > termHeight+2 { // small allowance, matching the box-chrome screens
+		t.Fatalf("rendered %d lines for a %d-row terminal, want it bounded", len(lines), termHeight)
+	}
+	if !strings.Contains(p.View(), "Why is cyrus-common installed?") {
+		t.Error("title is missing from the rendered output (pushed off-screen by the unbounded list?)")
+	}
+	if !strings.Contains(p.View(), names[p.provenanceCursor]) {
+		t.Errorf("the selected row (%q) isn't visible in the rendered output; the scroll window didn't follow the cursor", names[p.provenanceCursor])
+	}
+}
+
+// TestDiskListScrollsWithManyItems mirrors
+// TestProvenanceListScrollsWithManyReverseDeps for the disk cleanup screen,
+// which had the identical unbounded-list gap.
+func TestDiskListScrollsWithManyItems(t *testing.T) {
+	const termHeight = 30
+
+	items := make([]pkg.DiskItem, 60)
+	for i := range items {
+		items[i] = pkg.DiskItem{Name: fmt.Sprintf("old-kernel-pkg-%02d", i), Reason: "old kernel"}
+	}
+
+	p := NewPanel(fakeManager{})
+	p.setSize(100, termHeight)
+	p.screen = screenDisk
+	p.diskItems = items
+	p.diskCursor = 45
+
+	lines := strings.Split(p.View(), "\n")
+	if len(lines) > termHeight+2 {
+		t.Fatalf("rendered %d lines for a %d-row terminal, want it bounded", len(lines), termHeight)
+	}
+	if !strings.Contains(p.View(), items[p.diskCursor].Name) {
+		t.Errorf("the selected row (%q) isn't visible in the rendered output; the scroll window didn't follow the cursor", items[p.diskCursor].Name)
 	}
 }
 
