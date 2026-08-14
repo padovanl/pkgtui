@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/padovanl/pkgtui/internal/pkg"
 )
 
@@ -65,5 +67,51 @@ func TestMouseClickBelowListDoesNotPanic(t *testing.T) {
 
 	if got := p.list.Index(); got != 0 {
 		t.Errorf("list.Index() = %d, want 0 (unchanged: an out-of-range click is ignored, not applied)", got)
+	}
+}
+
+// TestLongConfirmLabelWraps guards against a crash reported live: "upgrade
+// all" joins every package name into one unbroken line, and modalStyle has
+// no width of its own, so without wrapping that line first, it runs
+// straight past the box border and off the edge of the terminal instead of
+// wrapping inside it. Checks both directions: a long label wraps to fit
+// the terminal width, and a short one — the common "Install x?" case —
+// stays naturally compact instead of getting padded out to the wrap width
+// too.
+func TestLongConfirmLabelWraps(t *testing.T) {
+	const termWidth = 100
+
+	names := make([]string, 60)
+	for i := range names {
+		names[i] = "some-fairly-long-package-name-" + string(rune('a'+i%26))
+	}
+	longLabel := "Upgrade 60 apt packages?\n" + strings.Join(names, ", ")
+
+	p := NewPanel(fakeManager{})
+	p.setSize(termWidth, 34)
+	p.screen = screenConfirm
+	p.pending = &pendingAction{label: longLabel}
+
+	for _, line := range strings.Split(p.View(), "\n") {
+		if w := lipgloss.Width(line); w > termWidth {
+			t.Fatalf("line %d chars wide, wider than the %d-column terminal: %q", w, termWidth, line)
+		}
+	}
+
+	p.pending = &pendingAction{label: "Install cowsay?"}
+	var boxTop string
+	for _, line := range strings.Split(p.View(), "\n") {
+		if strings.Contains(line, "╭") {
+			boxTop = line
+			break
+		}
+	}
+	// lipgloss.Place centers the whole modal in the full terminal width,
+	// so the *view* naturally has plenty of padding around a small box —
+	// that's not the wrapping bug this guards against. What matters is
+	// the box itself: for one short line, it should stay close to its
+	// natural content width, not get stretched out to the wrap cap.
+	if w := lipgloss.Width(strings.TrimSpace(boxTop)); w > 40 {
+		t.Errorf("short confirm's box is %d chars wide, wider than it should need to be for one short line: %q", w, boxTop)
 	}
 }

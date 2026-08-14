@@ -90,6 +90,21 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tea.KeyMsg:
+		if msg.String() == "ctrl+l" {
+			// The conventional "redraw the screen" key across terminal
+			// tools (vim, bash readline, htop, tmux...), and pkgtui's own
+			// answer to any terminal-side rendering glitch: a stale
+			// partial redraw a specific terminal emulator's own repaint
+			// logic left behind, which — proven by driving the real
+			// binary through a real pty and a real terminal emulator in
+			// e2e/settings_test.go — isn't a case of pkgtui sending the
+			// wrong bytes. tea.ClearScreen forces bubbletea to forget its
+			// diff cache and fully repaint from scratch on the next
+			// render, not just this key's immediate handler running.
+			// Always available, even mid-input: ctrl+l isn't a character
+			// any text field would want to actually consume.
+			return a, tea.ClearScreen
+		}
 		if a.settings != nil {
 			if changed := a.settings.handleKey(msg); changed {
 				saveSettings()

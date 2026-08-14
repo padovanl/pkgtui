@@ -342,7 +342,16 @@ func (m *Manager) RemoveCmd(name string) []string {
 
 func (m *Manager) UpgradeCmd(name string) []string {
 	if name == "" {
-		return pkg.MaybeSudo([]string{"apt-get", "upgrade", "-y"})
+		// dist-upgrade, not plain upgrade: plain "apt-get upgrade" refuses
+		// to touch a package whose new version needs a dependency
+		// installed or removed, silently leaving it behind rather than
+		// erroring — which showed up live as "upgrade all" needing two
+		// separate runs to actually finish (the first run's upgrades
+		// freed up whatever had been blocking the rest, which then went
+		// through cleanly on a second identical run). dist-upgrade
+		// resolves those dependency changes as part of the same
+		// transaction, so one run is enough.
+		return pkg.MaybeSudo([]string{"apt-get", "dist-upgrade", "-y"})
 	}
 	return pkg.MaybeSudo([]string{"apt-get", "install", "--only-upgrade", "-y", name})
 }

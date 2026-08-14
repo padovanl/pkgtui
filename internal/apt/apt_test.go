@@ -114,3 +114,20 @@ func TestParseRdependsOutput(t *testing.T) {
 		t.Errorf("parseRdependsOutput() = %v, want %v", got, want)
 	}
 }
+
+// TestUpgradeCmdUpgradesAllUsesDistUpgrade guards against a regression to
+// plain "apt-get upgrade" for the upgrade-all action: it refuses to touch
+// a package whose new version needs a dependency installed or removed,
+// silently leaving it behind instead — which showed up live as "upgrade
+// all" needing two runs to actually finish everything. dist-upgrade
+// resolves those dependency changes in the same transaction. Checks just
+// the tail of the command, not the sudo prefix (that's MaybeSudo's own
+// concern, tested separately in internal/pkg, and depends on the euid
+// actually running this test).
+func TestUpgradeCmdUpgradesAllUsesDistUpgrade(t *testing.T) {
+	got := (&Manager{}).UpgradeCmd("")
+	want := []string{"apt-get", "dist-upgrade", "-y"}
+	if n := len(got); n < len(want) || !reflect.DeepEqual(got[n-len(want):], want) {
+		t.Errorf("UpgradeCmd(\"\") = %v, want it to end with %v", got, want)
+	}
+}

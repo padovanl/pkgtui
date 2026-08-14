@@ -75,20 +75,24 @@ var palettes = map[string]palette{
 
 // badgeTextBlack and badgeTextWhite are the only two colors ever used as
 // text on a colored badge (active tab, header bar, key hints, warning
-// banner, selected row). Both are base ANSI codes (0-15), not 256-color
-// codes: a terminal that only supports 16 colors — TERM=xterm without
-// "-256color", common in minimal Docker/SSH sessions — renders every
-// 256-color code in a theme's own palette as its *nearest* approximation,
-// which is exactly what made badge text hard to read before (a fixed
-// black rendered fine against some approximated backgrounds and badly
-// against others). The base 16 colors aren't approximated on any
-// terminal, 16-color or not, so picking between just these two is safe
-// everywhere, and contrastingBadgeText below picks whichever of the two
-// actually contrasts better against each theme's real accent/highlight/
-// danger color, instead of assuming black always works.
+// banner, selected row).
+//
+// These are explicit truecolor hex values, deliberately not the base ANSI
+// codes 0/15 (an earlier version of this used exactly those, reasoning
+// that they're never *approximated* the way a theme's 256-color values
+// can be on a limited terminal — true, but beside the point: 0-15 are
+// exactly the 16 slots a terminal's *own color scheme* is expected to
+// customize, that being their whole purpose. Reported live: badge text
+// rendering as a muddy gray instead of black or white, on a terminal
+// (Windows Terminal/WSL2) whose color scheme had quietly redefined what
+// "black" and "white" mean. A truecolor hex value bypasses that
+// palette entirely — the terminal paints the literal RGB given, no ANSI
+// slot indirection — and still degrades gracefully via termenv's own
+// downsampling on a genuinely 256-/16-color-limited terminal, same as
+// every other color in this file already relies on.
 var (
-	badgeTextBlack = lipgloss.Color("0")
-	badgeTextWhite = lipgloss.Color("15")
+	badgeTextBlack = lipgloss.Color("#000000")
+	badgeTextWhite = lipgloss.Color("#FFFFFF")
 )
 
 // contrastingBadgeText returns whichever of badgeTextBlack/badgeTextWhite

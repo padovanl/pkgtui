@@ -156,6 +156,7 @@ pkgtui
 | `esc`       | Go back                                     |
 | `,`         | Open settings (theme, keybindings)          |
 | `?`         | Toggle the in-app help screen (full keybinding list) |
+| `ctrl+l`    | Force a full screen redraw (fixes a stale/glitched display, same as in vim/bash/htop) |
 | `q`         | Quit                                        |
 
 \* Orphaned only appears for apt: packages `apt-get autoremove` would clean up.
