@@ -1280,6 +1280,8 @@ func (p *Panel) View() string {
 
 	var status string
 	switch {
+	case p.list.FilterState() == list.Filtering:
+		status = dimStyle.Render("esc: close without filtering   enter: apply filter")
 	case p.loading:
 		status = p.spinner.View() + " loading..."
 	case p.err != nil:

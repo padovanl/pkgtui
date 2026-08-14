@@ -29,7 +29,13 @@ func displayKey(k string) string {
 	return k
 }
 
-func (s *settingsScreen) rowCount() int { return 1 + len(rebindableKeys()) }
+// rowCount is theme + one row per rebindable action + the trailing
+// "reset keybindings" row (see resetRow).
+func (s *settingsScreen) rowCount() int { return 2 + len(rebindableKeys()) }
+
+// resetRow is the cursor position of the "reset keybindings" row: right
+// after the theme row (0) and every rebindable-key row (1..N).
+func (s *settingsScreen) resetRow() int { return 1 + len(rebindableKeys()) }
 
 // cycleTheme moves delta steps through ThemeNames (wrapping both ways) and
 // applies the result immediately, so every visible screen — including this
@@ -85,6 +91,11 @@ func (s *settingsScreen) handleKey(msg tea.KeyMsg) (changed bool) {
 			s.cycleTheme(1)
 			return true
 		}
+		if s.cursor == s.resetRow() {
+			ResetKeybindings()
+			s.statusMsg = "keybindings reset to defaults"
+			return true
+		}
 		s.capturing = true
 		s.statusMsg = "press a key to rebind (esc to cancel)..."
 	}
@@ -106,9 +117,13 @@ func (s *settingsScreen) View(width, height int) string {
 		}
 		rows = append(rows, s.row(i+1, e.label, k))
 	}
+	rows = append(rows, "", s.row(s.resetRow(), "Reset keybindings to defaults", ""))
 	hint := "↑/↓ move   enter select/rebind   esc close"
-	if s.cursor == 0 {
+	switch s.cursor {
+	case 0:
 		hint = "↑/↓ move   ←/→ browse themes   esc close"
+	case s.resetRow():
+		hint = "↑/↓ move   enter reset all keybindings   esc close"
 	}
 	rows = append(rows, "", dimStyle.Render(s.statusMsg), "", dimStyle.Render(hint))
 
