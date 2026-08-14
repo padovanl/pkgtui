@@ -96,6 +96,31 @@ func rebindableKeys() []bindingEntry {
 	}
 }
 
+// defaultKeybindings snapshots every rebindable action's original key,
+// captured by init() before ApplyKeybindingOverrides (called from NewApp,
+// well after package init) can ever mutate one — so "reset to defaults"
+// in the settings screen has something to reset back to even after a
+// saved config already overrode every single key.
+var defaultKeybindings map[string]string
+
+func init() {
+	defaultKeybindings = make(map[string]string, len(rebindableKeys()))
+	for _, e := range rebindableKeys() {
+		if ks := e.ptr.Keys(); len(ks) > 0 {
+			defaultKeybindings[e.action] = ks[0]
+		}
+	}
+}
+
+// ResetKeybindings restores every rebindable action to its original key.
+func ResetKeybindings() {
+	for _, e := range rebindableKeys() {
+		if k, ok := defaultKeybindings[e.action]; ok {
+			e.ptr.SetKeys(k)
+		}
+	}
+}
+
 // ApplyKeybindingOverrides rebinds actions from a saved config, ignoring
 // unknown action names (e.g. from a config written by a newer pkgtui).
 func ApplyKeybindingOverrides(overrides map[string]string) {

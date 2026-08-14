@@ -73,7 +73,8 @@ remember the syntax of either package manager.
   settings screen — the whole UI re-skins live as you move, no need to
   commit to one just to see it.
 - **Rebind any action key**, live, from inside the app — no config file
-  editing required (though it's saved to one).
+  editing required (though it's saved to one), with a one-key reset back
+  to the defaults if a round of rebinding goes sideways.
 - **Remembers where you left off**: backend and view are restored on the
   next launch.
 
@@ -137,7 +138,7 @@ pkgtui
 | `←` / `→`   | Switch backend (apt / snap)                 |
 | `tab`       | Switch view (Installed / Upgradable / Orphaned\* / Search) |
 | `/`         | Search the full apt/snap catalog (then `enter` to run it) |
-| `f`         | Filter the packages currently shown, live as you type |
+| `f`         | Filter the packages currently shown, live as you type (`enter` to keep it, `esc` to close without filtering) |
 | `↑`/`↓`, `j`/`k` | Navigate the list (mouse wheel and clicks work too) |
 | `enter`     | Show details for the selected package       |
 | `space`     | Tag/untag the selected package for a batch action |

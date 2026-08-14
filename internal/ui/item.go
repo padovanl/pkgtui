@@ -172,7 +172,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 			rest += strings.Repeat(" ", pad)
 		}
 		bg := lipgloss.NewStyle().Background(colorHighlight)
-		textStyle := bg.Foreground(colorBadgeText).Bold(true)
+		textStyle := bg.Foreground(colorBadgeTextOnHighlight).Bold(true)
 		line = textStyle.Render(mark) + bulletStyle.Background(colorHighlight).Bold(true).Render(bullet) + textStyle.Render(rest)
 	} else {
 		mark := "  "
