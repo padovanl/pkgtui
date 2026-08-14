@@ -9,7 +9,8 @@
 
 An **htop-style** terminal UI (TUI) to search, install, remove and upgrade
 **apt** and **snap** packages, from a single dashboard, without having to
-remember the syntax of either package manager.
+remember the syntax of either package manager. See [CHANGELOG.md](CHANGELOG.md)
+for what's new.
 
 ![pkgtui apt demo](assets/demo.gif)
 *Searching, inspecting and installing an **apt** package, live.*
