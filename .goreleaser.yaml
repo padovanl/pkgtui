@@ -50,6 +50,13 @@ nfpms:
     contents:
       - src: ./README.md
         dst: /usr/share/doc/pkgtui/README.md
+      - src: ./assets/pkgtui.desktop
+        dst: /usr/share/applications/pkgtui.desktop
+      - src: ./assets/icon.svg
+        dst: /usr/share/icons/hicolor/scalable/apps/pkgtui.svg
+    scripts:
+      postinstall: ./scripts/deb/postinstall.sh
+      postremove: ./scripts/deb/postremove.sh
 
 checksum:
   name_template: "checksums.txt"

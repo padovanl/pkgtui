@@ -82,7 +82,12 @@ func installedEntries() (map[string]dpkgEntry, error) {
 // output format, and prints a "WARNING: apt does not have a stable CLI
 // interface" banner on stderr that CombinedOutput folds in with the actual
 // listing, so that gets filtered out here too, not just "Listing...".
-func parseUpgradableOutput(out string) []pkg.Package {
+//
+// held comes from dpkg's own selection state (installedEntries), not from
+// this command's output: apt still lists a held package here (it does have
+// a newer version available, hold just blocks apt from installing it), but
+// says nothing about the hold itself.
+func parseUpgradableOutput(out string, held map[string]bool) []pkg.Package {
 	var results []pkg.Package
 	for _, line := range strings.Split(out, "\n") {
 		if line == "" || strings.HasPrefix(line, "Listing...") || strings.HasPrefix(line, "WARNING:") {
@@ -110,6 +115,7 @@ func parseUpgradableOutput(out string) []pkg.Package {
 			Source:    "apt",
 			Status:    pkg.StatusUpgradable,
 			Security:  strings.Contains(suite, "security"),
+			Held:      held[name],
 		})
 	}
 	return results
@@ -120,7 +126,15 @@ func fetchUpgradable() ([]pkg.Package, error) {
 	if err != nil {
 		return nil, fmt.Errorf("apt list --upgradable: %w", err)
 	}
-	return parseUpgradableOutput(string(out)), nil
+	installed, err := installedEntries()
+	if err != nil {
+		installed = map[string]dpkgEntry{}
+	}
+	held := make(map[string]bool, len(installed))
+	for name, e := range installed {
+		held[name] = e.Held
+	}
+	return parseUpgradableOutput(string(out), held), nil
 }
 
 func upgradableSet() (map[string]bool, error) {

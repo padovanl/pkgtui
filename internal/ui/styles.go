@@ -133,7 +133,6 @@ var (
 	tagMarkStyle          lipgloss.Style
 	securityMarkStyle     lipgloss.Style
 	heldMarkStyle         lipgloss.Style
-	selectedRowStyle      lipgloss.Style
 	titleStyle            lipgloss.Style
 	dimStyle              lipgloss.Style
 	searchBoxStyle        lipgloss.Style
@@ -189,17 +188,6 @@ func applyPalette(p palette) {
 	tagMarkStyle = lipgloss.NewStyle().Foreground(colorHighlight).Bold(true)
 	securityMarkStyle = lipgloss.NewStyle().Foreground(colorDanger).Bold(true)
 	heldMarkStyle = lipgloss.NewStyle().Foreground(colorHighlight).Bold(true)
-
-	// The selected row is rendered as one single styled span (see
-	// itemDelegate.Render), not by wrapping an already-colored string: a
-	// colored bullet/mark rendered on its own carries an embedded ANSI
-	// reset, and wrapping that in an outer background only paints up to
-	// that reset, leaving the rest of the row un-highlighted. Full black-
-	// on-highlight (like the badges) keeps it visible on every theme.
-	selectedRowStyle = lipgloss.NewStyle().
-		Background(colorHighlight).
-		Foreground(colorBadgeText).
-		Bold(true)
 
 	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(colorFg)
 	dimStyle = lipgloss.NewStyle().Foreground(colorMuted)

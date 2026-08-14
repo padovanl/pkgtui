@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b2f3a"/>
+      <stop offset="1" stop-color="#1a1d24"/>
+    </linearGradient>
+    <linearGradient id="top" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8ef2a0"/>
+      <stop offset="1" stop-color="#5fe085"/>
+    </linearGradient>
+    <linearGradient id="left" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1f9e52"/>
+      <stop offset="1" stop-color="#167a40"/>
+    </linearGradient>
+    <linearGradient id="right" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#39c46f"/>
+      <stop offset="1" stop-color="#28a85c"/>
+    </linearGradient>
+  </defs>
+
+  <!-- app tile background -->
+  <rect x="0" y="0" width="256" height="256" rx="56" fill="url(#bg)"/>
+
+  <!-- isometric package box -->
+  <g stroke="#12151b" stroke-width="3" stroke-linejoin="round">
+    <polygon points="128,52 191,89 128,126 65,89" fill="url(#top)"/>
+    <polygon points="65,89 128,126 128,204 65,167" fill="url(#left)"/>
+    <polygon points="191,89 128,126 128,204 191,167" fill="url(#right)"/>
+  </g>
+
+  <!-- seam lines on the top face, like packing-tape creases -->
+  <g stroke="#12151b" stroke-width="2.5" stroke-linecap="round" opacity="0.55">
+    <line x1="128" y1="52" x2="128" y2="126"/>
+    <line x1="65" y1="89" x2="128" y2="108"/>
+    <line x1="191" y1="89" x2="128" y2="108"/>
+  </g>
+
+  <!-- terminal cursor accent, bottom-right of the box -->
+  <rect x="150" y="176" width="30" height="10" rx="2" fill="#d7ffe4"/>
+</svg>

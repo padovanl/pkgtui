@@ -45,3 +45,25 @@ func TestSearchKeyRecomputesListHeight(t *testing.T) {
 		t.Errorf("listTopOffset after entering search = %d, want %d (unchanged from %d: setSize wasn't recomputed)", p.listTopOffset, wantOffset, before)
 	}
 }
+
+// TestMouseClickBelowListDoesNotPanic guards against a crash reported live:
+// clicking below the last real row (row index computed from the click's Y
+// position landing past the end of the items slice) called list.Select with
+// an out-of-range index. bubbles/list doesn't validate that itself, so the
+// next render panicked inside its own populatedView with a slice-bounds
+// error. Reproduces on an empty list (no items loaded yet — the fastest way
+// to trigger it, any click at all is "past the end") and on a short one.
+func TestMouseClickBelowListDoesNotPanic(t *testing.T) {
+	p := NewPanel(fakeManager{})
+	p.setSize(100, 30)
+
+	click := tea.MouseMsg{X: 5, Y: 20, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
+	p, _ = p.handleMouse(click) // empty list: must not panic
+
+	p.list.SetItems(itemsFrom([]pkg.Package{{Name: "a"}, {Name: "b"}}))
+	p, _ = p.handleMouse(click) // short list, click past the last row: must not panic
+
+	if got := p.list.Index(); got != 0 {
+		t.Errorf("list.Index() = %d, want 0 (unchanged: an out-of-range click is ignored, not applied)", got)
+	}
+}
