@@ -112,6 +112,24 @@ func (h *harness) readLoop() {
 	}
 }
 
+// waitReady waits past both startup delays that matter here: termenv's
+// OSC 11 background-color query (see newHarness) and the Installed list's
+// own background load, which starts empty ("APT — Installed (0)", spinner
+// ticking) and only fills in once the dpkg query underneath it returns. A
+// test that sends input right after seeing a bullet character can still
+// race this: the legend line ("● installed   ▲ upgrade available ...")
+// renders immediately as static chrome, bullet included, well before any
+// actual package row exists — matching on "● " is matching the legend,
+// not proof of loaded content, and input sent while still loading is
+// silently dropped rather than queued. Waiting for the loading spinner's
+// own text to disappear is unambiguous: it's only ever shown while
+// p.loading is true.
+func (h *harness) waitReady() {
+	h.t.Helper()
+	h.waitFor("pkgtui", 10*time.Second)
+	h.waitForAbsent("loading...", 5*time.Second)
+}
+
 // currentFrame is the emulated terminal's current screen content, one
 // line per row, trailing padding included (the caller strips whatever it
 // needs).
@@ -158,6 +176,86 @@ func (h *harness) waitForAbsent(sub string, timeout time.Duration) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	h.t.Fatalf("timed out after %s waiting for %q to disappear from output; last frame:\n%s", timeout, sub, h.currentFrame())
+}
+
+// waitForAny polls until the current frame contains at least one of subs,
+// returning which one matched first. Used where an outcome is one of
+// several legitimate results (e.g. a live command finishing "done" or
+// "failed") rather than one specific string.
+func (h *harness) waitForAny(subs []string, timeout time.Duration) string {
+	h.t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		frame := h.currentFrame()
+		for _, sub := range subs {
+			if strings.Contains(frame, sub) {
+				return sub
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	h.t.Fatalf("timed out after %s waiting for any of %q in output; last frame:\n%s", timeout, subs, h.currentFrame())
+	return ""
+}
+
+// waitExit waits for the pkgtui process to exit on its own (e.g. after
+// sending "q"), failing the test if it's still running after timeout —
+// guards against a hang on quit, which a test that never checks for exit
+// would never catch.
+func (h *harness) waitExit(timeout time.Duration) {
+	h.t.Helper()
+	done := make(chan struct{})
+	go func() {
+		_, _ = h.cmd.Process.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(timeout):
+		h.t.Fatalf("process did not exit within %s of quitting", timeout)
+	}
+}
+
+// waitForLineHavingPrefix polls until some line contains prefix,
+// returning that line. Unlike waitForRowValue, this doesn't guard against
+// the search string appearing inside a label rather than a value — fine
+// for a prefix distinctive enough that it can't coincidentally match
+// anything else on screen (e.g. "APT — Installed ("), not for a single
+// character that might.
+func (h *harness) waitForLineHavingPrefix(prefix string, timeout time.Duration) string {
+	h.t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if line := h.lineContaining(prefix); line != "" {
+			return line
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	h.t.Fatalf("timed out after %s waiting for a line containing %q; last frame:\n%s", timeout, prefix, h.currentFrame())
+	return ""
+}
+
+// waitForResultRow polls until a *list row* containing name appears,
+// skipping the search box's own echo of the typed query — "🔍 cowsay"
+// contains "cowsay" too, and renders above the results, so a plain
+// substring search finds it first. Every real result row starts with a
+// status symbol (●/▲/○) that the search box line never has.
+func (h *harness) waitForResultRow(name string, timeout time.Duration) string {
+	h.t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		for _, line := range strings.Split(h.currentFrame(), "\n") {
+			if !strings.Contains(line, name) {
+				continue
+			}
+			if strings.ContainsAny(line, "●▲○") {
+				return line
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	h.t.Fatalf("timed out after %s waiting for a result row containing %q", timeout, name)
+	return ""
 }
 
 // waitForRowValue polls until a line starting with rowLabel has expect

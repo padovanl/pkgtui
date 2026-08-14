@@ -19,13 +19,7 @@ import (
 // terminal — this can.
 func TestSettingsRebindDisplaysNewKeyImmediately(t *testing.T) {
 	h := newHarness(t)
-
-	// termenv queries the terminal for its background color (OSC 11) on
-	// startup and waits briefly for a reply before falling back to
-	// defaults; a real terminal answers near-instantly, but this harness
-	// doesn't emulate one, so that wait is real here — hence the
-	// generous timeout on the very first thing we wait for.
-	h.waitFor("pkgtui", 10*time.Second)
+	h.waitReady()
 
 	h.sendText(",")
 	h.waitFor("pkgtui — settings", 3*time.Second)
