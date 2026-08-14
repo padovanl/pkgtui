@@ -1300,6 +1300,17 @@ func (p *Panel) View() string {
 		if len(p.pending.channels) > 0 {
 			body += fmt.Sprintf("\n\nChannel: %s  [c] change", p.pending.currentChannel())
 		}
+		// "Upgrade all" joins every package name into a single unbroken
+		// line — modalStyle has no width of its own, so without wrapping
+		// it first, that line runs straight past the box border and off
+		// the edge of the terminal instead of wrapping inside it. Only
+		// wrap when the content actually needs it, though: forcing every
+		// confirm through a fixed Width() would also pad a short one-line
+		// "Install x?" out to that same width, turning today's small,
+		// snug box into a wide mostly-empty one.
+		if wrapWidth := min(76, maxInt(p.width-8, 20)); lipgloss.Width(body) > wrapWidth {
+			body = lipgloss.NewStyle().Width(wrapWidth).Render(body)
+		}
 		modal := modalStyle.Render(body + "\n\n[y] confirm    [n] cancel")
 		content = lipgloss.Place(p.width, p.height, lipgloss.Center, lipgloss.Center, modal)
 	}
