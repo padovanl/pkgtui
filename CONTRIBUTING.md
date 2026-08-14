@@ -37,6 +37,34 @@ All four run in CI on every push and PR; a red CI check is the fastest way
 to get a review request bounced back to you, so it's worth running them
 locally first.
 
+### End-to-end tests
+
+`go test ./...` only covers unit tests and tests that call UI methods
+directly (`internal/ui/panel_test.go` and friends) — none of those touch
+bubbletea's actual render pipeline, so a bug that only exists in what's
+really drawn to the terminal can slip past them. `e2e/` closes that gap:
+it builds the real binary and drives it through a real pty, feeding the
+output into an actual terminal emulator ([hinshun/vt10x](https://github.com/hinshun/vt10x))
+and asserting on the resulting screen content, not on internal state.
+
+```bash
+go test -tags e2e ./e2e/...
+```
+
+Excluded from the plain `go test ./...` above via its build tag (it
+compiles a fresh binary and needs a real pty, so it's slower), but runs
+as its own required CI step — same as the rest, a red check there blocks
+merging.
+
+When adding a UI regression test, prefer `internal/ui/panel_test.go`'s
+style (call `Panel.handleKey`/`handleMouse` directly) when the bug is in
+application *logic*; reach for `e2e/` when it's specifically about what
+ends up on screen — as `e2e/settings_test.go`'s own history shows, a
+hand-rolled "reconstruct the current frame from raw bytes" approach is
+an easy way to fool yourself into a false failure (or a false pass):
+bubbletea redraws incrementally, and only a real emulator reliably knows
+what's actually on screen at any given moment.
+
 ## Code style
 
 - Comments explain *why*, not *what* — skip a comment if the code already
