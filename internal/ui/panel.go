@@ -642,7 +642,16 @@ func (p *Panel) handleMouse(msg tea.MouseMsg) (*Panel, tea.Cmd) {
 			p.list.CursorDown()
 		}
 	case tea.MouseButtonLeft:
-		if row := msg.Y - p.listTopOffset; row >= 0 {
+		// row >= p.list.Height() means the click landed below the list's
+		// own rendered area entirely — the empty space under a short
+		// list, or the footer hint bar further down still. Without this
+		// check, that Y coordinate still maps to *some* row index
+		// arithmetically, and on a long-enough list that index is a
+		// genuinely valid item — so a click nowhere near the list would
+		// silently jump the selection to an unrelated row somewhere in
+		// it, which looked like clicking the footer "changed pages" for
+		// no apparent reason.
+		if row := msg.Y - p.listTopOffset; row >= 0 && row < p.list.Height() {
 			// A click below the last real row (or anywhere on an empty
 			// list) computes an index past the end of the items slice;
 			// Select doesn't validate that itself, and the out-of-range
@@ -1382,6 +1391,14 @@ func (p *Panel) renderRunning() string {
 	)
 }
 
+// renderHelp is not height-aware — its content isn't put through a
+// viewport the way screenDetail/screenChangelog are, so it just renders
+// at whatever height the current row count needs. It's already close to
+// the edge of a modest terminal (100x34 in e2e/navigation_test.go, which
+// caught this directly: one more row was enough to push the title off
+// the top). Adding rows here should be weighed against that; the real
+// fix is making this scroll like the other box screens do, not something
+// to take on incidentally while adding one keybinding's worth of text.
 func (p *Panel) renderHelp() string {
 	keyStyle := lipgloss.NewStyle().Bold(true).Foreground(colorHighlight).Width(14)
 	row := func(k, desc string) string {
