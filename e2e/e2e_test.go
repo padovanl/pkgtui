@@ -127,7 +127,11 @@ func (h *harness) readLoop() {
 func (h *harness) waitReady() {
 	h.t.Helper()
 	h.waitFor("pkgtui", 10*time.Second)
-	h.waitForAbsent("loading...", 5*time.Second)
+	// 5s cut it close even locally (some runs used nearly all of it) and
+	// wasn't enough at all on a real CI runner, where the initial dpkg
+	// query apparently takes longer — 20s gives real headroom instead of
+	// shaving margin off an already-tight wait.
+	h.waitForAbsent("loading...", 20*time.Second)
 }
 
 // currentFrame is the emulated terminal's current screen content, one
