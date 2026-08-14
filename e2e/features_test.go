@@ -3,6 +3,7 @@
 package e2e
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -78,6 +79,13 @@ func TestRevertAsksConfirmation(t *testing.T) {
 	h.sendKey("right") // switch to the snap tab
 	h.waitFor("SNAP —", 5*time.Second)
 	h.waitForAbsent("loading...", 20*time.Second)
+	if strings.Contains(h.currentFrame(), "No items.") {
+		// Caught live: a CI runner with no snaps installed (not even
+		// core/snapd itself) has nothing to select, so "V" has nothing to
+		// act on and this path can't be exercised — not a pkgtui bug, just
+		// an environment this test's premise doesn't hold in.
+		t.Skip("no snaps installed on this machine, nothing to revert")
+	}
 	h.sendKey("down")
 	h.sendText("V")
 	h.waitFor("Revert", 5*time.Second)
