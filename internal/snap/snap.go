@@ -4,9 +4,12 @@ package snap
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/padovanl/pkgtui/internal/pkg"
 )
@@ -195,6 +198,107 @@ func (m *Manager) RemoveManyCmd(names []string) []string {
 	return pkg.MaybeSudo(append([]string{"snap", "remove"}, names...))
 }
 
+// parseSnapListAllOutput extracts disabled old revisions from "snap list
+// --all" output. snapd always keeps the previous revision or two of every
+// snap around as an automatic rollback safety net — genuinely useful right
+// after a bad refresh, but nobody ever comes back to reclaim the space once
+// satisfied the new revision is fine, and there's no autoremove equivalent
+// for snap that does it on its own.
+func parseSnapListAllOutput(out string) []pkg.DiskItem {
+	var items []pkg.DiskItem
+	for i, line := range strings.Split(out, "\n") {
+		if i == 0 || line == "" {
+			continue // header row
+		}
+		fields := columnSplit(line, 6)
+		if len(fields) < 6 {
+			continue
+		}
+		name := strings.TrimSpace(fields[0])
+		rev := strings.TrimSpace(fields[2])
+		notes := strings.TrimSpace(fields[5])
+		if !strings.Contains(notes, "disabled") {
+			continue
+		}
+		items = append(items, pkg.DiskItem{
+			Name:   name + " (revision " + rev + ")",
+			Reason: "disabled old revision, kept as a rollback safety net",
+			Argv:   pkg.MaybeSudo([]string{"snap", "remove", name, "--revision=" + rev}),
+		})
+	}
+	return items
+}
+
+// DiskReport surfaces disabled old snap revisions still taking up disk
+// space. Implements pkg.DiskAnalyzer.
+func (m *Manager) DiskReport() ([]pkg.DiskItem, error) {
+	out, err := exec.Command("snap", "list", "--all").Output()
+	if err != nil && len(out) == 0 {
+		return nil, nil
+	}
+	return parseSnapListAllOutput(string(out)), nil
+}
+
+// parseListRevisions extracts each installed snap's active revision number
+// from "snap list" output (the same listing installedMap already parses,
+// just keeping the Rev column that one throws away) — the key needed to
+// look up its on-disk file and, from that, when it actually last changed.
+func parseListRevisions(out string) map[string]string {
+	result := make(map[string]string)
+	for i, line := range strings.Split(out, "\n") {
+		if i == 0 || line == "" {
+			continue // header row
+		}
+		fields := columnSplit(line, 6)
+		if len(fields) < 3 {
+			continue
+		}
+		result[strings.TrimSpace(fields[0])] = strings.TrimSpace(fields[2])
+	}
+	return result
+}
+
+// InstalledRevisions maps each installed snap's name to its active
+// revision. Implements pkg.Staler.
+func (m *Manager) InstalledRevisions() (map[string]string, error) {
+	out, err := exec.Command("snap", "list").Output()
+	if err != nil && len(out) == 0 {
+		return map[string]string{}, nil
+	}
+	return parseListRevisions(string(out)), nil
+}
+
+// snapsDir is where snapd stores each installed revision's actual squashfs
+// image, named "<name>_<revision>.snap" — its mtime is this revision's real
+// last-refreshed time. Neither "snap list" nor "snap info" exposes a
+// reliably machine-parseable date of their own (snap info's "refresh-date"
+// is locale-formatted free text meant for a human, not for parsing), so
+// this sidesteps that entirely: a filesystem timestamp needs no parsing and
+// can't drift out of format across snapd versions or locales.
+var snapsDir = "/var/lib/snapd/snaps"
+
+// RefreshTime returns when name's given revision was actually applied.
+// Implements pkg.Staler.
+func (m *Manager) RefreshTime(name, revision string) (time.Time, error) {
+	path := filepath.Join(snapsDir, name+"_"+revision+".snap")
+	info, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return info.ModTime(), nil
+}
+
+// RevertCmd reverts name to its previous revision, restoring that
+// revision's data/config along with its binary — snap's own idiomatic
+// "undo the last refresh," not just installing an older version number.
+// Implements pkg.Reverter. If there's no previous revision to go back to,
+// the command itself fails at run time with a clear message, surfaced the
+// same way any other failed action already is (red border, error text in
+// the live-output box) — not something worth a separate pre-check for.
+func (m *Manager) RevertCmd(name string) []string {
+	return pkg.MaybeSudo([]string{"snap", "revert", name})
+}
+
 // Channels lists the standard snap risk levels, most to least stable.
 func (m *Manager) Channels() []string {
 	return []string{"stable", "candidate", "beta", "edge"}
@@ -211,3 +315,6 @@ func (m *Manager) InstallChannelCmd(name, channel string) []string {
 var _ pkg.Manager = (*Manager)(nil)
 var _ pkg.BatchManager = (*Manager)(nil)
 var _ pkg.ChannelInstaller = (*Manager)(nil)
+var _ pkg.DiskAnalyzer = (*Manager)(nil)
+var _ pkg.Staler = (*Manager)(nil)
+var _ pkg.Reverter = (*Manager)(nil)

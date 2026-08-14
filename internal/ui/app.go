@@ -17,6 +17,7 @@ type App struct {
 	active int
 
 	settings *settingsScreen // nil unless the settings overlay is open
+	overlap  *overlapScreen  // nil unless the apt+snap overlap overlay is open
 
 	width, height int
 }
@@ -117,6 +118,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, nil
 		}
+		if a.overlap != nil {
+			if key.Matches(msg, keys.Escape) {
+				a.overlap = nil
+			} else {
+				a.overlap.handleKey(msg)
+			}
+			return a, nil
+		}
 		switch {
 		case key.Matches(msg, keys.Quit) && !a.activePanel().IsTyping():
 			return a.quit()
@@ -125,6 +134,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, keys.Settings) && !a.activePanel().IsTyping():
 			a.settings = newSettingsScreen()
 			return a, nil
+		case key.Matches(msg, keys.Overlap) && !a.activePanel().IsTyping():
+			a.overlap = newOverlapScreen()
+			return a, loadOverlapCmd(a.panels[0].mgr, a.panels[1].mgr)
 		case key.Matches(msg, keys.NextBackend) && !a.activePanel().IsTyping():
 			a.active = (a.active + 1) % len(a.panels)
 			return a, nil
@@ -135,6 +147,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		p, cmd := a.activePanel().Update(msg)
 		a.panels[a.active] = p
 		return a, cmd
+
+	case overlapResultMsg:
+		if a.overlap != nil {
+			a.overlap.loading = false
+			a.overlap.err = msg.err
+			if msg.err == nil {
+				a.overlap.duplicates = msg.duplicates
+				a.overlap.stale = msg.stale
+			}
+		}
+		return a, nil
 
 	case backendMsg:
 		for i, p := range a.panels {
@@ -147,7 +170,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tea.MouseMsg:
-		if a.settings != nil {
+		if a.settings != nil || a.overlap != nil {
 			return a, nil
 		}
 		if msg.Y == 0 && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
@@ -242,6 +265,13 @@ func (a *App) View() string {
 			a.renderTabBar(),
 			a.settings.View(a.width, a.height-3),
 			footerBarStyle.Width(a.width).Render(dimStyle.Render("settings")),
+		)
+	}
+	if a.overlap != nil {
+		return lipgloss.JoinVertical(lipgloss.Left,
+			a.renderTabBar(),
+			a.overlap.View(a.width, a.height-3),
+			footerBarStyle.Width(a.width).Render(dimStyle.Render("apt+snap overlap")),
 		)
 	}
 	body := a.activePanel().View()

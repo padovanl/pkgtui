@@ -28,6 +28,11 @@ type keyMap struct {
 	Changelog   key.Binding
 	PPA         key.Binding
 	Settings    key.Binding
+	Disk        key.Binding
+	Provenance  key.Binding
+	Unattended  key.Binding
+	Overlap     key.Binding
+	Version     key.Binding
 }
 
 var keys = keyMap{
@@ -56,6 +61,11 @@ var keys = keyMap{
 	Changelog:   key.NewBinding(key.WithKeys("C"), key.WithHelp("C", "changelog")),
 	PPA:         key.NewBinding(key.WithKeys("P"), key.WithHelp("P", "PPAs")),
 	Settings:    key.NewBinding(key.WithKeys(","), key.WithHelp(",", "settings")),
+	Disk:        key.NewBinding(key.WithKeys("K"), key.WithHelp("K", "disk cleanup")),
+	Provenance:  key.NewBinding(key.WithKeys("W"), key.WithHelp("W", "why installed")),
+	Unattended:  key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "auto-upgrades")),
+	Overlap:     key.NewBinding(key.WithKeys("O"), key.WithHelp("O", "apt+snap overlap")),
+	Version:     key.NewBinding(key.WithKeys("V"), key.WithHelp("V", "install a version / revert")),
 }
 
 // bindingEntry is one row of the rebindable-keys registry used by both the
@@ -93,6 +103,15 @@ func rebindableKeys() []bindingEntry {
 		{"settings", "Open settings", &keys.Settings},
 		{"help", "Help", &keys.Help},
 		{"quit", "Quit", &keys.Quit},
+		// Appended after quit, deliberately: e2e/settings_test.go hardcodes
+		// how many rows down "Open settings" sits in this list, matching
+		// its position above. New entries go at the end so that offset
+		// keeps meaning what the test says it means.
+		{"disk", "Disk cleanup explorer", &keys.Disk},
+		{"provenance", "Why is this installed", &keys.Provenance},
+		{"unattended", "Unattended-upgrades status", &keys.Unattended},
+		{"overlap", "apt+snap overlap view", &keys.Overlap},
+		{"version", "Install a specific version / revert", &keys.Version},
 	}
 }
 

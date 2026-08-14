@@ -64,16 +64,283 @@ func parseDpkgQueryOutput(out string) map[string]dpkgEntry {
 	return result
 }
 
-func installedEntries() (map[string]dpkgEntry, error) {
+// dpkgQueryOutput runs the raw dpkg-query listing both installedEntries and
+// DiskReport parse (differently) from, so a single DiskReport call doesn't
+// need to shell out to dpkg-query twice for two views of the same data.
+func dpkgQueryOutput() (string, error) {
 	out, err := exec.Command("dpkg-query", "-W", "-f", "${Package}\t${Version}\t${Installed-Size}\t${Status}\n").Output()
 	if err != nil {
 		// dpkg-query exits non-zero if the local package db is empty; the
 		// output up to that point is still usable.
 		if len(out) == 0 {
-			return nil, err
+			return "", err
 		}
 	}
-	return parseDpkgQueryOutput(string(out)), nil
+	return string(out), nil
+}
+
+func installedEntries() (map[string]dpkgEntry, error) {
+	out, err := dpkgQueryOutput()
+	if err != nil {
+		return nil, err
+	}
+	return parseDpkgQueryOutput(out), nil
+}
+
+// parseResidualConfigOutput extracts packages dpkg has fully removed but
+// left configuration files behind for ("rc" state in dpkg -l output), from
+// the same raw dpkg-query output parseDpkgQueryOutput reads — which
+// deliberately excludes these, since installedEntries() only wants
+// genuinely installed packages. Nobody ever revisits this list on their
+// own; dpkg never prunes it automatically either.
+func parseResidualConfigOutput(out string) map[string]dpkgEntry {
+	result := make(map[string]dpkgEntry)
+	for _, line := range strings.Split(out, "\n") {
+		parts := strings.SplitN(line, "\t", 4)
+		if len(parts) != 4 {
+			continue
+		}
+		if strings.TrimSpace(parts[3]) != "deinstall ok config-files" {
+			continue
+		}
+		sizeKB, _ := strconv.ParseInt(strings.TrimSpace(parts[2]), 10, 64)
+		result[parts[0]] = dpkgEntry{Version: parts[1], SizeKB: sizeKB}
+	}
+	return result
+}
+
+// kernelPkgRe matches the kernel package families apt's own autoremove
+// deliberately always leaves at least one previous generation of behind (so
+// a bad new kernel can still be booted into) — exactly what then silently
+// piles up over time on a small /boot partition if nobody ever revisits it.
+var kernelPkgRe = regexp.MustCompile(`^linux-(?:image|headers|modules(?:-extra)?)-(\d[\w.+-]*)$`)
+
+var digitsRe = regexp.MustCompile(`\d+`)
+
+// kernelVersionKey normalizes a kernel package's version suffix down to
+// just its numeric release (e.g. "5.15.0-91"), stripping the flavor suffix
+// ("-generic", "-generic-64k"...) so linux-image-5.15.0-91-generic and
+// linux-headers-5.15.0-91 (headers packages sometimes omit the flavor) group
+// under the same kernel release instead of looking like two unrelated ones.
+func kernelVersionKey(suffix string) string {
+	nums := digitsRe.FindAllString(suffix, -1)
+	if len(nums) == 0 {
+		return suffix
+	}
+	if len(nums) > 3 {
+		nums = nums[:3]
+	}
+	return strings.Join(nums, ".")
+}
+
+// kernelVersionLess compares two kernelVersionKey outputs numerically,
+// component by component: a plain string compare gets this backwards
+// ("5.4" sorts after "5.15" lexicographically, the wrong way round).
+func kernelVersionLess(a, b string) bool {
+	as := strings.Split(a, ".")
+	bs := strings.Split(b, ".")
+	for i := 0; i < len(as) && i < len(bs); i++ {
+		an, _ := strconv.Atoi(as[i])
+		bn, _ := strconv.Atoi(bs[i])
+		if an != bn {
+			return an < bn
+		}
+	}
+	return len(as) < len(bs)
+}
+
+// kernelDiskItems flags installed kernel packages (image/headers/modules)
+// belonging to a release that's neither the currently running one nor the
+// newest installed one.
+func kernelDiskItems(installed map[string]dpkgEntry, running string) []pkg.DiskItem {
+	runningKey := kernelVersionKey(running)
+	byKey := map[string][]string{}
+	for name := range installed {
+		m := kernelPkgRe.FindStringSubmatch(name)
+		if m == nil {
+			continue
+		}
+		key := kernelVersionKey(m[1])
+		byKey[key] = append(byKey[key], name)
+	}
+	if len(byKey) <= 1 {
+		return nil // nothing to compare against, or no kernel packages tracked at all
+	}
+	keys := make([]string, 0, len(byKey))
+	for k := range byKey {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool { return kernelVersionLess(keys[i], keys[j]) })
+	newest := keys[len(keys)-1]
+
+	var items []pkg.DiskItem
+	for _, key := range keys {
+		if key == newest || key == runningKey {
+			continue
+		}
+		for _, name := range byKey[key] {
+			e := installed[name]
+			items = append(items, pkg.DiskItem{
+				Name:   name,
+				Reason: "old kernel (" + key + ")",
+				Size:   e.SizeKB * 1024,
+				Argv:   pkg.MaybeSudo([]string{"apt-get", "purge", "-y", name}),
+			})
+		}
+	}
+	return items
+}
+
+// DiskReport surfaces installed things taking up disk space without adding
+// value any more: old kernel packages and residual config files left
+// behind by already-removed packages. Implements pkg.DiskAnalyzer.
+func (m *Manager) DiskReport() ([]pkg.DiskItem, error) {
+	raw, err := dpkgQueryOutput()
+	if err != nil {
+		return nil, err
+	}
+	installed := parseDpkgQueryOutput(raw)
+	residual := parseResidualConfigOutput(raw)
+
+	running := ""
+	if out, err := exec.Command("uname", "-r").Output(); err == nil {
+		running = strings.TrimSpace(string(out))
+	}
+
+	items := kernelDiskItems(installed, running)
+	for name, e := range residual {
+		items = append(items, pkg.DiskItem{
+			Name:   name,
+			Reason: "leftover config files (package already removed)",
+			Size:   e.SizeKB * 1024,
+			Argv:   pkg.MaybeSudo([]string{"dpkg", "--purge", name}),
+		})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Size != items[j].Size {
+			return items[i].Size > items[j].Size
+		}
+		return items[i].Name < items[j].Name
+	})
+	return items, nil
+}
+
+// Provenance reports whether name was explicitly installed (as opposed to
+// pulled in as a dependency) and what currently depends on it. Implements
+// pkg.ProvenanceProvider.
+func (m *Manager) Provenance(name string) (pkg.Provenance, error) {
+	manual := false
+	if out, err := exec.Command("apt-mark", "showmanual", name).Output(); err == nil {
+		manual = strings.TrimSpace(string(out)) == name
+	}
+	var revdeps []string
+	if out, err := exec.Command("apt-cache", "rdepends", name).Output(); err == nil {
+		revdeps = parseRdependsOutput(string(out))
+	}
+	return pkg.Provenance{Manual: manual, ReverseDeps: revdeps}, nil
+}
+
+// parseMadisonOutput parses "apt-cache madison <pkg>" output, one version
+// per line in the form "pkg | version | origin" (apt itself doesn't
+// document the exact column widths/whitespace, hence the trimming). The
+// same version can appear once per matching origin (e.g. both binary
+// Packages and source Sources entries); only the first occurrence is kept.
+func parseMadisonOutput(out, installed string) []pkg.PackageVersion {
+	var versions []pkg.PackageVersion
+	seen := map[string]bool{}
+	for _, line := range strings.Split(out, "\n") {
+		parts := strings.SplitN(line, "|", 3)
+		if len(parts) != 3 {
+			continue
+		}
+		version := strings.TrimSpace(parts[1])
+		origin := strings.TrimSpace(parts[2])
+		if version == "" || seen[version] {
+			continue
+		}
+		seen[version] = true
+		versions = append(versions, pkg.PackageVersion{Version: version, Origin: origin, Current: version == installed})
+	}
+	return versions
+}
+
+// AvailableVersions lists every version of name apt-cache madison knows
+// about (across all configured repos, not just the single candidate apt
+// would pick on its own). Implements pkg.VersionLister.
+func (m *Manager) AvailableVersions(name string) ([]pkg.PackageVersion, error) {
+	out, err := exec.Command("apt-cache", "madison", name).Output()
+	if err != nil {
+		return nil, fmt.Errorf("apt-cache madison %s: %w", name, err)
+	}
+	installed := ""
+	if entries, err := installedEntries(); err == nil {
+		if e, ok := entries[name]; ok {
+			installed = e.Version
+		}
+	}
+	return parseMadisonOutput(string(out), installed), nil
+}
+
+// InstallVersionCmd installs (or downgrades to) an exact version of name.
+// Implements pkg.VersionLister.
+func (m *Manager) InstallVersionCmd(name, version string) []string {
+	return pkg.MaybeSudo([]string{"apt-get", "install", "-y", name + "=" + version})
+}
+
+const autoUpgradesConfigPath = "/etc/apt/apt.conf.d/20auto-upgrades"
+const unattendedUpgradesLogPath = "/var/log/unattended-upgrades/unattended-upgrades.log"
+
+var autoUpgradesEnabledRe = regexp.MustCompile(`APT::Periodic::Unattended-Upgrade\s+"(\d+)"`)
+
+// parseAutoUpgradesEnabled reports whether APT::Periodic::Unattended-Upgrade
+// is turned on in 20auto-upgrades (the file unattended-upgrades' own
+// postinst writes when "enable automatic updates" is accepted at install
+// time), e.g. a line like: APT::Periodic::Unattended-Upgrade "1";
+func parseAutoUpgradesEnabled(conf string) bool {
+	m := autoUpgradesEnabledRe.FindStringSubmatch(conf)
+	return m != nil && m[1] != "0"
+}
+
+// parseUnattendedUpgradesLog scans an unattended-upgrades.log for the most
+// recent "Packages that will be upgraded: ..." line, returning its
+// timestamp and the package names — the only per-run summary this log
+// actually contains, everything else is verbose noise around it.
+func parseUnattendedUpgradesLog(log string) (timestamp string, packages []string) {
+	const marker = "Packages that will be upgraded: "
+	for _, line := range strings.Split(log, "\n") {
+		idx := strings.Index(line, marker)
+		if idx == -1 {
+			continue
+		}
+		ts, _, ok := strings.Cut(line, ",") // "2026-08-10 06:27:03,001 INFO ..."
+		if !ok {
+			continue
+		}
+		timestamp = ts
+		packages = strings.Fields(line[idx+len(marker):])
+	}
+	return timestamp, packages
+}
+
+// UnattendedUpgradesStatus reports on silent background upgrades, which
+// otherwise leave no trace anywhere a user is likely to look. Every field
+// is best-effort: a missing config file or log just means "unknown", not an
+// error worth failing the whole call over. Implements
+// pkg.UnattendedUpgradesReporter.
+func (m *Manager) UnattendedUpgradesStatus() (pkg.UnattendedUpgradesStatus, error) {
+	var status pkg.UnattendedUpgradesStatus
+	if conf, err := os.ReadFile(autoUpgradesConfigPath); err == nil {
+		status.Enabled = parseAutoUpgradesEnabled(string(conf))
+	}
+	if logData, err := os.ReadFile(unattendedUpgradesLogPath); err == nil {
+		status.LastRunTime, status.LastPackages = parseUnattendedUpgradesLog(string(logData))
+	}
+	if out, err := exec.Command("systemctl", "show", "apt-daily-upgrade.timer", "-p", "NextElapseUSecRealtime", "--value").Output(); err == nil {
+		if next := strings.TrimSpace(string(out)); next != "" && next != "n/a" {
+			status.NextRunTime = next
+		}
+	}
+	return status, nil
 }
 
 // parseUpgradableOutput parses the output of "apt list --upgradable". The
@@ -459,3 +726,7 @@ var _ pkg.BatchManager = (*Manager)(nil)
 var _ pkg.Holder = (*Manager)(nil)
 var _ pkg.Changelogger = (*Manager)(nil)
 var _ pkg.PPAManager = (*Manager)(nil)
+var _ pkg.DiskAnalyzer = (*Manager)(nil)
+var _ pkg.ProvenanceProvider = (*Manager)(nil)
+var _ pkg.UnattendedUpgradesReporter = (*Manager)(nil)
+var _ pkg.VersionLister = (*Manager)(nil)

@@ -3,7 +3,10 @@
 // uniformly.
 package pkg
 
-import "os"
+import (
+	"os"
+	"time"
+)
 
 // geteuid is a variable (not a direct os.Geteuid call) so tests can swap it
 // out without needing to actually run as root.
@@ -131,4 +134,101 @@ type PPAManager interface {
 	ListPPAs() ([]PPA, error)
 	AddPPACmd(ppa string) []string
 	RemovePPACmd(ppa PPA) []string
+}
+
+// DiskItem is one reclaimable-space finding surfaced by the disk explorer:
+// something taking up real disk space without adding value any more (an old
+// kernel, a leftover config from a removed package, a disabled snap
+// revision), distinct from the "still useful but unused" packages already
+// covered by OrphanLister.
+type DiskItem struct {
+	Name   string
+	Reason string // e.g. "old kernel", "leftover config", "disabled revision"
+	Size   int64  // bytes, 0 if unknown
+	Argv   []string
+}
+
+// DiskAnalyzer is implemented by backends that can point out installed
+// things taking up disk space that almost nobody actually wants kept
+// around: old kernels and orphaned config files left behind by a removed
+// package (apt), or disabled old snap revisions kept as a rollback safety
+// net (snap).
+type DiskAnalyzer interface {
+	DiskReport() ([]DiskItem, error)
+}
+
+// Provenance describes why a package is present on the system: whether it
+// was explicitly asked for or only pulled in as someone else's dependency,
+// and what (if anything) currently depends on it.
+type Provenance struct {
+	Manual      bool // explicitly installed (apt-mark manual), not just a dependency
+	ReverseDeps []string
+}
+
+// ProvenanceProvider is implemented by backends that can explain why a
+// package is installed. Scoped to apt (apt-mark + apt-cache rdepends);
+// snap's flat, mostly-dependency-free package model has no real equivalent.
+type ProvenanceProvider interface {
+	Provenance(name string) (Provenance, error)
+}
+
+// UnattendedUpgradesStatus summarizes silent background upgrades, which
+// otherwise leave no trace anywhere the user is likely to look.
+type UnattendedUpgradesStatus struct {
+	Enabled      bool
+	LastRunTime  string   // human-readable, "" if unknown/never
+	LastPackages []string // packages touched by the most recent run
+	NextRunTime  string   // human-readable estimate, "" if unknown
+}
+
+// UnattendedUpgradesReporter is implemented by backends with a silent
+// background-upgrade mechanism worth surfacing. Scoped to apt
+// (unattended-upgrades); snap's auto-refresh has no comparable per-run log.
+type UnattendedUpgradesReporter interface {
+	UnattendedUpgradesStatus() (UnattendedUpgradesStatus, error)
+}
+
+// PackageVersion is one selectable version of a package, as reported by
+// VersionLister.
+type PackageVersion struct {
+	Version string
+	Origin  string // repo/origin this version comes from, "" if unknown
+	Current bool   // this is the currently installed version
+}
+
+// VersionLister is implemented by backends that can list every version of a
+// package actually available to install, not just the single "candidate"
+// version normally offered — so a user can deliberately install an older
+// one, or downgrade after a bad upgrade, without hand-typing
+// `apt-get install pkg=version` argv syntax from memory. Scoped to apt
+// (apt-cache madison); snap has no comparable "pick an exact version"
+// concept, only revisions (see Reverter).
+type VersionLister interface {
+	AvailableVersions(name string) ([]PackageVersion, error)
+	InstallVersionCmd(name, version string) []string
+}
+
+// Reverter is implemented by backends with a built-in "go back to what was
+// there before" mechanism distinct from picking an explicit version (snap's
+// `snap revert`, which restores the previous revision's data/config along
+// with its binary, not just the binary — snap keeps the previous revision
+// around specifically for this). Scoped to snap.
+type Reverter interface {
+	RevertCmd(name string) []string
+}
+
+// Staler is implemented by backends that can report when a package's
+// currently installed version was actually last refreshed, so the UI can
+// flag ones that have sat untouched for a long time — apt already surfaces
+// this indirectly (the ▲ upgradable marker means a newer version exists),
+// but snap has nothing equivalent: a snap can go untouched for years
+// without ever showing as "behind" if nothing newer happens to exist on its
+// tracked channel, or the machine simply never runs `snap refresh`. Scoped
+// to snap.
+type Staler interface {
+	// InstalledRevisions maps each installed package's name to an opaque
+	// revision identifier the backend can later resolve a refresh time for.
+	InstalledRevisions() (map[string]string, error)
+	// RefreshTime returns when name's given revision was actually applied.
+	RefreshTime(name, revision string) (time.Time, error)
 }

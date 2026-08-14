@@ -47,6 +47,10 @@ const (
 	screenChangelog
 	screenPPA
 	screenRunning
+	screenDisk
+	screenProvenance
+	screenUnattended
+	screenVersion
 )
 
 // pendingAction holds a destructive/privileged action awaiting user
@@ -137,16 +141,55 @@ type ppaListResultMsg struct {
 
 func (m ppaListResultMsg) Backend() string { return m.backend }
 
+type diskReportResultMsg struct {
+	backend string
+	items   []pkg.DiskItem
+	err     error
+}
+
+func (m diskReportResultMsg) Backend() string { return m.backend }
+
+type provenanceResultMsg struct {
+	backend string
+	name    string
+	prov    pkg.Provenance
+	err     error
+}
+
+func (m provenanceResultMsg) Backend() string { return m.backend }
+
+type uaStatusResultMsg struct {
+	backend string
+	status  pkg.UnattendedUpgradesStatus
+	err     error
+}
+
+func (m uaStatusResultMsg) Backend() string { return m.backend }
+
+type versionsResultMsg struct {
+	backend  string
+	name     string
+	versions []pkg.PackageVersion
+	err      error
+}
+
+func (m versionsResultMsg) Backend() string { return m.backend }
+
 // Panel is the self-contained UI + state for a single package manager
 // backend (apt or snap).
 type Panel struct {
-	mgr           pkg.Manager
-	orphanLister  pkg.OrphanLister
-	batchManager  pkg.BatchManager
-	chanInstaller pkg.ChannelInstaller
-	holder        pkg.Holder
-	changelogger  pkg.Changelogger
-	ppaManager    pkg.PPAManager
+	mgr                pkg.Manager
+	orphanLister       pkg.OrphanLister
+	batchManager       pkg.BatchManager
+	chanInstaller      pkg.ChannelInstaller
+	holder             pkg.Holder
+	changelogger       pkg.Changelogger
+	ppaManager         pkg.PPAManager
+	diskAnalyzer       pkg.DiskAnalyzer
+	provenanceProvider pkg.ProvenanceProvider
+	uaReporter         pkg.UnattendedUpgradesReporter
+	versionLister      pkg.VersionLister
+	reverter           pkg.Reverter
 
 	list     list.Model
 	search   textinput.Model
@@ -179,6 +222,27 @@ type Panel struct {
 	ppaCursor int
 	ppaAdding bool
 	ppaInput  textinput.Model
+
+	// Disk cleanup screen.
+	diskItems  []pkg.DiskItem
+	diskCursor int
+
+	// Provenance ("why is this installed") screen. provenanceStack holds
+	// the breadcrumb of package names drilled through so far, so esc can
+	// step back one level at a time instead of leaving straight to the list.
+	provenanceName   string
+	provenance       pkg.Provenance
+	provenanceCursor int
+	provenanceStack  []string
+
+	// Unattended-upgrades dashboard (apt only).
+	uaStatus pkg.UnattendedUpgradesStatus
+
+	// Version picker screen (apt only; snap's "V" goes straight to a
+	// revert confirmation instead, see openVersionAction).
+	versionPkgName string
+	versions       []pkg.PackageVersion
+	versionCursor  int
 
 	width, height int
 	listTopOffset int // rows above the list body, for mouse row mapping
@@ -247,6 +311,21 @@ func NewPanel(mgr pkg.Manager) *Panel {
 	}
 	if pm, ok := mgr.(pkg.PPAManager); ok {
 		p.ppaManager = pm
+	}
+	if da, ok := mgr.(pkg.DiskAnalyzer); ok {
+		p.diskAnalyzer = da
+	}
+	if pp, ok := mgr.(pkg.ProvenanceProvider); ok {
+		p.provenanceProvider = pp
+	}
+	if ua, ok := mgr.(pkg.UnattendedUpgradesReporter); ok {
+		p.uaReporter = ua
+	}
+	if vl, ok := mgr.(pkg.VersionLister); ok {
+		p.versionLister = vl
+	}
+	if rv, ok := mgr.(pkg.Reverter); ok {
+		p.reverter = rv
 	}
 	return p
 }
@@ -366,6 +445,42 @@ func (p *Panel) loadPPAsCmd() tea.Cmd {
 	}
 }
 
+func (p *Panel) loadDiskReportCmd() tea.Cmd {
+	mgr := p.mgr
+	da := p.diskAnalyzer
+	return func() tea.Msg {
+		items, err := da.DiskReport()
+		return diskReportResultMsg{backend: mgr.Name(), items: items, err: err}
+	}
+}
+
+func (p *Panel) loadProvenanceCmd(name string) tea.Cmd {
+	mgr := p.mgr
+	pp := p.provenanceProvider
+	return func() tea.Msg {
+		prov, err := pp.Provenance(name)
+		return provenanceResultMsg{backend: mgr.Name(), name: name, prov: prov, err: err}
+	}
+}
+
+func (p *Panel) loadUAStatusCmd() tea.Cmd {
+	mgr := p.mgr
+	ua := p.uaReporter
+	return func() tea.Msg {
+		status, err := ua.UnattendedUpgradesStatus()
+		return uaStatusResultMsg{backend: mgr.Name(), status: status, err: err}
+	}
+}
+
+func (p *Panel) loadVersionsCmd(name string) tea.Cmd {
+	mgr := p.mgr
+	vl := p.versionLister
+	return func() tea.Msg {
+		versions, err := vl.AvailableVersions(name)
+		return versionsResultMsg{backend: mgr.Name(), name: name, versions: versions, err: err}
+	}
+}
+
 // sortPackages reorders pkgs in place by installed size (descending) when
 // that sort is active; otherwise it leaves the backend's own ordering
 // alone, since apt-cache/snap find already rank search results by
@@ -408,7 +523,17 @@ func (p *Panel) setSize(w, h int) {
 		p.list.SetSize(w, listH)
 	}
 	p.viewport.Width = w - 4
-	p.viewport.Height = h - 4
+	// Every screen that wraps this viewport (detail, changelog, help) joins
+	// it vertically with its own header line and a hint line on top of the
+	// box's own border+padding (2+2 = 4 rows of chrome) — bubbles/viewport
+	// always renders exactly Height lines, padding short content out to
+	// fill it, so those two extra lines are never absorbed by "the content
+	// was shorter than the box" the way they might look like they'd be.
+	// Sizing this to h-4 (just the box chrome) reliably overflowed the
+	// terminal by 2 rows on every use, caught live via the help screen
+	// losing its own title off the top of a 100x34 terminal once its
+	// content grew past a single screenful.
+	p.viewport.Height = maxInt(h-6, 3)
 	p.search.Width = w - 8
 	if p.running != nil {
 		p.running.resize(p.viewport.Width, p.viewport.Height)
@@ -526,6 +651,45 @@ func (p *Panel) Update(msg tea.Msg) (*Panel, tea.Cmd) {
 			if p.ppaCursor >= len(p.ppas) {
 				p.ppaCursor = maxInt(len(p.ppas)-1, 0)
 			}
+		}
+		return p, nil
+	case diskReportResultMsg:
+		p.loading = false
+		p.err = msg.err
+		if msg.err == nil {
+			p.diskItems = msg.items
+			if p.diskCursor >= len(p.diskItems) {
+				p.diskCursor = maxInt(len(p.diskItems)-1, 0)
+			}
+		}
+		return p, nil
+	case provenanceResultMsg:
+		p.loading = false
+		if msg.err != nil {
+			p.err = msg.err
+			return p, nil
+		}
+		p.err = nil
+		// A drill-down click can move p.provenanceName on before its own
+		// request lands; discard a response that's no longer for the
+		// package currently on screen instead of overwriting it with stale
+		// data.
+		if msg.name == p.provenanceName {
+			p.provenance = msg.prov
+		}
+		return p, nil
+	case uaStatusResultMsg:
+		p.loading = false
+		p.err = msg.err
+		if msg.err == nil {
+			p.uaStatus = msg.status
+		}
+		return p, nil
+	case versionsResultMsg:
+		p.loading = false
+		p.err = msg.err
+		if msg.err == nil && msg.name == p.versionPkgName {
+			p.versions = msg.versions
 		}
 		return p, nil
 	case ptyStartedMsg:
@@ -703,8 +867,11 @@ func (p *Panel) handleKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
 		switch {
 		case key.Matches(msg, keys.Escape), key.Matches(msg, keys.Enter), key.Matches(msg, keys.Help):
 			p.screen = screenList
+			return p, nil
 		}
-		return p, nil
+		var cmd tea.Cmd
+		p.viewport, cmd = p.viewport.Update(msg)
+		return p, cmd
 	}
 
 	if p.screen == screenDetail {
@@ -731,6 +898,26 @@ func (p *Panel) handleKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
 
 	if p.screen == screenPPA {
 		return p.handlePPAKey(msg)
+	}
+
+	if p.screen == screenDisk {
+		return p.handleDiskKey(msg)
+	}
+
+	if p.screen == screenProvenance {
+		return p.handleProvenanceKey(msg)
+	}
+
+	if p.screen == screenUnattended {
+		switch {
+		case key.Matches(msg, keys.Escape), key.Matches(msg, keys.Enter):
+			p.screen = screenList
+		}
+		return p, nil
+	}
+
+	if p.screen == screenVersion {
+		return p.handleVersionKey(msg)
 	}
 
 	if p.search.Focused() {
@@ -769,6 +956,8 @@ func (p *Panel) handleKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
 
 	switch {
 	case key.Matches(msg, keys.Help):
+		p.viewport.SetContent(p.helpContent())
+		p.viewport.GotoTop()
 		p.screen = screenHelp
 		return p, nil
 	case key.Matches(msg, keys.Search):
@@ -808,6 +997,14 @@ func (p *Panel) handleKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
 		return p.openChangelog()
 	case key.Matches(msg, keys.PPA):
 		return p.openPPAScreen()
+	case key.Matches(msg, keys.Disk):
+		return p.openDiskScreen()
+	case key.Matches(msg, keys.Provenance):
+		return p.openProvenance()
+	case key.Matches(msg, keys.Unattended):
+		return p.openUnattended()
+	case key.Matches(msg, keys.Version):
+		return p.openVersionAction()
 	}
 
 	var cmd tea.Cmd
@@ -852,6 +1049,203 @@ func (p *Panel) handlePPAKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
 	case key.Matches(msg, keys.Remove):
 		return p.startRemovePPA()
 	}
+	return p, nil
+}
+
+// handleDiskKey drives the disk cleanup screen: browsing findings (up/down)
+// and purging the one under the cursor.
+func (p *Panel) handleDiskKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
+	switch {
+	case key.Matches(msg, keys.Escape):
+		p.screen = screenList
+	case key.Matches(msg, keys.Up):
+		if p.diskCursor > 0 {
+			p.diskCursor--
+		}
+	case key.Matches(msg, keys.Down):
+		if p.diskCursor < len(p.diskItems)-1 {
+			p.diskCursor++
+		}
+	case key.Matches(msg, keys.Remove):
+		return p.startDiskPurge()
+	}
+	return p, nil
+}
+
+// startDiskPurge asks for confirmation before purging the disk-cleanup
+// finding under the cursor. Deliberately one at a time, not a tagged batch
+// like the main list's install/remove: each finding's Argv is already a
+// complete standalone command (apt-get purge, dpkg --purge, snap remove
+// --revision=N...), and those can't just be concatenated into one call the
+// way plain package names can.
+func (p *Panel) startDiskPurge() (*Panel, tea.Cmd) {
+	if p.diskCursor < 0 || p.diskCursor >= len(p.diskItems) {
+		return p, nil
+	}
+	target := p.diskItems[p.diskCursor]
+	if len(target.Argv) == 0 {
+		return p, nil
+	}
+	label := fmt.Sprintf("Purge %s?\n%s", target.Name, target.Reason)
+	if target.Size > 0 {
+		label += fmt.Sprintf(" (%s)", humanizeBytes(target.Size))
+	}
+	p.pending = &pendingAction{label: label, argv: target.Argv}
+	p.returnScreen = screenDisk
+	p.screen = screenConfirm
+	return p, nil
+}
+
+// openDiskScreen opens the disk cleanup explorer (old kernels, leftover
+// configs, disabled snap revisions — see pkg.DiskAnalyzer).
+func (p *Panel) openDiskScreen() (*Panel, tea.Cmd) {
+	if p.diskAnalyzer == nil {
+		p.statusMsg = fmt.Sprintf("Disk cleanup isn't available for %s.", p.mgr.Name())
+		return p, nil
+	}
+	p.screen = screenDisk
+	p.diskCursor = 0
+	p.loading = true
+	p.statusMsg = ""
+	return p, tea.Batch(p.loadDiskReportCmd(), p.spinner.Tick)
+}
+
+// handleProvenanceKey drives the "why is this installed" screen: browsing
+// the selected package's reverse dependencies (up/down), drilling into one
+// of them (enter), and stepping back out one level at a time (esc), rather
+// than esc always leaving straight back to the package list.
+func (p *Panel) handleProvenanceKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
+	switch {
+	case key.Matches(msg, keys.Escape):
+		if n := len(p.provenanceStack); n > 0 {
+			prev := p.provenanceStack[n-1]
+			p.provenanceStack = p.provenanceStack[:n-1]
+			p.provenanceName = prev
+			p.provenanceCursor = 0
+			p.loading = true
+			return p, tea.Batch(p.loadProvenanceCmd(prev), p.spinner.Tick)
+		}
+		p.screen = screenList
+	case key.Matches(msg, keys.Up):
+		if p.provenanceCursor > 0 {
+			p.provenanceCursor--
+		}
+	case key.Matches(msg, keys.Down):
+		if p.provenanceCursor < len(p.provenance.ReverseDeps)-1 {
+			p.provenanceCursor++
+		}
+	case key.Matches(msg, keys.Enter):
+		if p.provenanceCursor < 0 || p.provenanceCursor >= len(p.provenance.ReverseDeps) {
+			return p, nil
+		}
+		next := p.provenance.ReverseDeps[p.provenanceCursor]
+		p.provenanceStack = append(p.provenanceStack, p.provenanceName)
+		p.provenanceName = next
+		p.provenanceCursor = 0
+		p.loading = true
+		return p, tea.Batch(p.loadProvenanceCmd(next), p.spinner.Tick)
+	}
+	return p, nil
+}
+
+// openProvenance opens the "why is this installed" screen for the selected
+// package.
+func (p *Panel) openProvenance() (*Panel, tea.Cmd) {
+	if p.provenanceProvider == nil {
+		p.statusMsg = fmt.Sprintf("Provenance isn't available for %s.", p.mgr.Name())
+		return p, nil
+	}
+	sel, ok := p.selected()
+	if !ok {
+		return p, nil
+	}
+	p.provenanceStack = nil
+	p.provenanceName = sel.Name
+	p.provenance = pkg.Provenance{}
+	p.provenanceCursor = 0
+	p.screen = screenProvenance
+	p.loading = true
+	return p, tea.Batch(p.loadProvenanceCmd(sel.Name), p.spinner.Tick)
+}
+
+// openUnattended opens the unattended-upgrades status dashboard.
+func (p *Panel) openUnattended() (*Panel, tea.Cmd) {
+	if p.uaReporter == nil {
+		p.statusMsg = fmt.Sprintf("Unattended-upgrades status isn't available for %s.", p.mgr.Name())
+		return p, nil
+	}
+	p.screen = screenUnattended
+	p.loading = true
+	p.statusMsg = ""
+	return p, tea.Batch(p.loadUAStatusCmd(), p.spinner.Tick)
+}
+
+// handleVersionKey drives the version picker screen: browsing available
+// versions (up/down) and confirming an install/downgrade to the one under
+// the cursor (enter).
+func (p *Panel) handleVersionKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
+	switch {
+	case key.Matches(msg, keys.Escape):
+		p.screen = screenList
+	case key.Matches(msg, keys.Up):
+		if p.versionCursor > 0 {
+			p.versionCursor--
+		}
+	case key.Matches(msg, keys.Down):
+		if p.versionCursor < len(p.versions)-1 {
+			p.versionCursor++
+		}
+	case key.Matches(msg, keys.Enter):
+		if p.versionCursor < 0 || p.versionCursor >= len(p.versions) {
+			return p, nil
+		}
+		v := p.versions[p.versionCursor]
+		label := fmt.Sprintf("Install %s version %s?", p.versionPkgName, v.Version)
+		if v.Origin != "" {
+			label += "\n" + v.Origin
+		}
+		p.pending = &pendingAction{label: label, argv: p.versionLister.InstallVersionCmd(p.versionPkgName, v.Version)}
+		p.returnScreen = screenList
+		p.screen = screenConfirm
+	}
+	return p, nil
+}
+
+// openVersionAction is "V": for apt, opens a picker over every version
+// apt-cache madison knows about (installing a specific version, or
+// downgrading, without hand-typing pkg=version); for snap, which has no
+// comparable "exact version" concept, it goes straight to a revert
+// confirmation instead — the two backends' actual capabilities here are
+// different enough that presenting them identically would be misleading
+// rather than convenient.
+func (p *Panel) openVersionAction() (*Panel, tea.Cmd) {
+	sel, ok := p.selected()
+	if !ok {
+		return p, nil
+	}
+	if p.versionLister != nil {
+		p.versionPkgName = sel.Name
+		p.versionCursor = 0
+		p.versions = nil
+		p.screen = screenVersion
+		p.loading = true
+		p.statusMsg = ""
+		return p, tea.Batch(p.loadVersionsCmd(sel.Name), p.spinner.Tick)
+	}
+	if p.reverter != nil {
+		if sel.Status == pkg.StatusAvailable {
+			p.statusMsg = "Not installed."
+			return p, nil
+		}
+		p.pending = &pendingAction{
+			label: fmt.Sprintf("Revert %s to its previous revision?\nOnly works if a previous revision is still kept.", sel.Name),
+			argv:  p.reverter.RevertCmd(sel.Name),
+		}
+		p.returnScreen = p.screen
+		p.screen = screenConfirm
+		return p, nil
+	}
+	p.statusMsg = fmt.Sprintf("Version selection isn't available for %s.", p.mgr.Name())
 	return p, nil
 }
 
@@ -1229,6 +1623,10 @@ func (p *Panel) dismissRunning() (*Panel, tea.Cmd) {
 		p.screen = screenPPA
 		return p, tea.Batch(p.loadPPAsCmd(), p.spinner.Tick)
 	}
+	if p.returnScreen == screenDisk {
+		p.screen = screenDisk
+		return p, tea.Batch(p.loadDiskReportCmd(), p.spinner.Tick)
+	}
 	p.screen = screenList
 	return p, tea.Batch(p.refreshCmd(), p.spinner.Tick)
 }
@@ -1277,6 +1675,22 @@ func (p *Panel) View() string {
 
 	if p.screen == screenPPA {
 		return p.renderPPA()
+	}
+
+	if p.screen == screenDisk {
+		return p.renderDisk()
+	}
+
+	if p.screen == screenProvenance {
+		return p.renderProvenance()
+	}
+
+	if p.screen == screenUnattended {
+		return p.renderUnattended()
+	}
+
+	if p.screen == screenVersion {
+		return p.renderVersion()
 	}
 
 	var sections []string
@@ -1365,6 +1779,177 @@ func (p *Panel) renderPPA() string {
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
+// diskRow renders one disk-cleanup finding, truncating (not wrapping) to
+// stay within the terminal width — same approach itemDelegate.Render uses
+// for the main list, for the same reason: a plain fmt.Sprintf with fixed
+// column widths would run straight off the edge on a narrow terminal.
+func (p *Panel) diskRow(it pkg.DiskItem, selected bool) string {
+	line := fmt.Sprintf("%-40s %-42s %10s", it.Name, it.Reason, humanizeBytes(it.Size))
+	maxW := maxInt(p.width-2, 0)
+	if lipgloss.Width(line) > maxW {
+		line = truncateANSI(line, maxW)
+	}
+	if selected {
+		return lipgloss.NewStyle().Background(lipgloss.Color("237")).Foreground(colorFg).Bold(true).Width(maxW).Render(line)
+	}
+	return line
+}
+
+func (p *Panel) renderDisk() string {
+	var total int64
+	for _, it := range p.diskItems {
+		total += it.Size
+	}
+	var sections []string
+	sections = append(sections, titleStyle.Render(fmt.Sprintf(" %s — Disk cleanup (%d finding(s), %s reclaimable) ",
+		strings.ToUpper(p.mgr.Name()), len(p.diskItems), humanizeBytes(total))))
+
+	if len(p.diskItems) == 0 && !p.loading {
+		sections = append(sections, dimStyle.Render("Nothing to reclaim — no old kernels, leftover configs, or disabled revisions found."))
+	}
+	for i, it := range p.diskItems {
+		sections = append(sections, p.diskRow(it, i == p.diskCursor))
+	}
+
+	var status string
+	switch {
+	case p.loading:
+		status = p.spinner.View() + " loading..."
+	case p.err != nil:
+		status = errorStyle.Render(p.err.Error())
+	case p.statusMsg != "":
+		status = dimStyle.Render(p.statusMsg)
+	}
+	if status != "" {
+		sections = append(sections, status)
+	}
+	sections = append(sections, dimStyle.Render("d/r: purge selected   esc: back"))
+
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+}
+
+func (p *Panel) renderProvenance() string {
+	var sections []string
+	sections = append(sections, titleStyle.Render(fmt.Sprintf(" %s — Why is %s installed? ", strings.ToUpper(p.mgr.Name()), p.provenanceName)))
+
+	reason := "pulled in as a dependency of something else, not asked for directly"
+	if p.provenance.Manual {
+		reason = "explicitly installed (apt-mark manual)"
+	}
+	sections = append(sections, dimStyle.Render(reason), "")
+
+	switch {
+	case p.loading:
+		sections = append(sections, p.spinner.View()+" loading...")
+	case len(p.provenance.ReverseDeps) == 0:
+		sections = append(sections, dimStyle.Render("Nothing else currently depends on it."))
+	default:
+		sections = append(sections, helpSectionStyle.Render(fmt.Sprintf("Depended on by (%d) — enter to drill in:", len(p.provenance.ReverseDeps))))
+		for i, name := range p.provenance.ReverseDeps {
+			line := "  " + name
+			maxW := maxInt(p.width-2, 0)
+			if lipgloss.Width(line) > maxW {
+				line = truncateANSI(line, maxW)
+			}
+			if i == p.provenanceCursor {
+				line = lipgloss.NewStyle().Background(lipgloss.Color("237")).Foreground(colorFg).Bold(true).Width(maxW).Render(line)
+			}
+			sections = append(sections, line)
+		}
+	}
+
+	if p.err != nil {
+		sections = append(sections, "", errorStyle.Render(p.err.Error()))
+	}
+
+	hint := "enter: drill in   esc: back"
+	if len(p.provenanceStack) > 0 {
+		hint = "enter: drill in   esc: back one level"
+	}
+	sections = append(sections, "", dimStyle.Render(hint))
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+}
+
+func (p *Panel) renderUnattended() string {
+	s := p.uaStatus
+	var rows []string
+	rows = append(rows, titleStyle.Render(" Unattended upgrades "), "")
+
+	enabled := dimStyle.Render("disabled")
+	if s.Enabled {
+		enabled = statusInstalledStyle.Render("enabled")
+	}
+	rows = append(rows, "Automatic background upgrades: "+enabled, "")
+
+	switch {
+	case p.loading:
+		rows = append(rows, p.spinner.View()+" loading...")
+	case s.LastRunTime == "":
+		rows = append(rows, dimStyle.Render("No completed run found in the local log."))
+	default:
+		rows = append(rows, "Last run: "+s.LastRunTime)
+		if len(s.LastPackages) > 0 {
+			rows = append(rows, dimStyle.Render("  upgraded: "+strings.Join(s.LastPackages, ", ")))
+		} else {
+			rows = append(rows, dimStyle.Render("  nothing needed upgrading"))
+		}
+	}
+	rows = append(rows, "")
+	if s.NextRunTime == "" {
+		rows = append(rows, dimStyle.Render("Next run: unknown (apt-daily-upgrade.timer not found)"))
+	} else {
+		rows = append(rows, "Next run: "+s.NextRunTime)
+	}
+
+	if p.err != nil {
+		rows = append(rows, "", errorStyle.Render(p.err.Error()))
+	}
+	rows = append(rows, "", dimStyle.Render("esc/enter: back"))
+
+	body := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	return lipgloss.Place(p.width, p.height, lipgloss.Center, lipgloss.Center, helpBoxStyle.Render(body))
+}
+
+func (p *Panel) renderVersion() string {
+	var sections []string
+	sections = append(sections, titleStyle.Render(fmt.Sprintf(" %s — Install a specific version of %s ", strings.ToUpper(p.mgr.Name()), p.versionPkgName)))
+
+	if len(p.versions) == 0 && !p.loading && p.err == nil {
+		sections = append(sections, dimStyle.Render("No other versions found."))
+	}
+	for i, v := range p.versions {
+		marker := "  "
+		if v.Current {
+			marker = "* "
+		}
+		line := fmt.Sprintf("%s%-24s %s", marker, v.Version, v.Origin)
+		maxW := maxInt(p.width-2, 0)
+		if lipgloss.Width(line) > maxW {
+			line = truncateANSI(line, maxW)
+		}
+		if i == p.versionCursor {
+			line = lipgloss.NewStyle().Background(lipgloss.Color("237")).Foreground(colorFg).Bold(true).Width(maxW).Render(line)
+		}
+		sections = append(sections, line)
+	}
+
+	var status string
+	switch {
+	case p.loading:
+		status = p.spinner.View() + " loading..."
+	case p.err != nil:
+		status = errorStyle.Render(p.err.Error())
+	case p.statusMsg != "":
+		status = dimStyle.Render(p.statusMsg)
+	}
+	if status != "" {
+		sections = append(sections, status)
+	}
+	sections = append(sections, dimStyle.Render("* = currently installed   enter: install this version   esc: back"))
+
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+}
+
 func (p *Panel) renderRunning() string {
 	cmdLine := ""
 	hint := "live output — keystrokes go to the command (e.g. the sudo password); ctrl+c interrupts it"
@@ -1391,23 +1976,18 @@ func (p *Panel) renderRunning() string {
 	)
 }
 
-// renderHelp is not height-aware — its content isn't put through a
-// viewport the way screenDetail/screenChangelog are, so it just renders
-// at whatever height the current row count needs. It's already close to
-// the edge of a modest terminal (100x34 in e2e/navigation_test.go, which
-// caught this directly: one more row was enough to push the title off
-// the top). Adding rows here should be weighed against that; the real
-// fix is making this scroll like the other box screens do, not something
-// to take on incidentally while adding one keybinding's worth of text.
-func (p *Panel) renderHelp() string {
+// helpContent builds the help screen's body text. Rendered inside a
+// viewport (see renderHelp) rather than sized to fit, since a fixed-height
+// render already broke once from a single added row on a modest 100x34
+// terminal (caught by e2e/navigation_test.go) — and this list only grows as
+// backends gain more optional features.
+func (p *Panel) helpContent() string {
 	keyStyle := lipgloss.NewStyle().Bold(true).Foreground(colorHighlight).Width(14)
 	row := func(k, desc string) string {
 		return keyStyle.Render(k) + dimStyle.Render(desc)
 	}
 
 	rows := []string{
-		titleStyle.Render("pkgtui — help"),
-		"",
 		helpSectionStyle.Render("Navigation"),
 		row("← / →", "switch backend (apt / snap)"),
 		row("tab", "switch view (Installed / Upgradable"+p.orphanedTabLabel()+" / Search)"),
@@ -1439,18 +2019,42 @@ func (p *Panel) renderHelp() string {
 	if p.ppaManager != nil {
 		rows = append(rows, row("P", "manage third-party repositories (PPAs)"))
 	}
+	if p.diskAnalyzer != nil {
+		rows = append(rows, row("K", "disk cleanup: old kernels, leftover configs, disabled revisions"))
+	}
+	if p.provenanceProvider != nil {
+		rows = append(rows, row("W", "why is the selected package installed"))
+	}
+	if p.uaReporter != nil {
+		rows = append(rows, row("A", "unattended (automatic background) upgrades status"))
+	}
+	if p.versionLister != nil {
+		rows = append(rows, row("V", "install a specific version of the selected package, or downgrade"))
+	}
+	if p.reverter != nil {
+		rows = append(rows, row("V", "revert the selected package to its previous revision"))
+	}
 	rows = append(rows,
 		"",
 		helpSectionStyle.Render("Status symbols"),
 		"  "+legendLine(),
 		"",
+		row("O", "apt+snap overlap: duplicate installs, stale snaps"),
 		row(",", "settings (theme, keybindings)"),
+		row("ctrl+l", "force a full screen redraw"),
 		row("q", "quit"),
 		row("?", "close this help"),
 	)
 
-	body := lipgloss.JoinVertical(lipgloss.Left, rows...)
-	return lipgloss.Place(p.width, p.height, lipgloss.Center, lipgloss.Center, helpBoxStyle.Render(body))
+	return lipgloss.JoinVertical(lipgloss.Left, rows...)
+}
+
+func (p *Panel) renderHelp() string {
+	return lipgloss.JoinVertical(lipgloss.Left,
+		titleStyle.Render(" pkgtui — help "),
+		detailBoxStyle.Width(maxInt(p.width-4, 10)).Render(p.viewport.View()),
+		dimStyle.Render("esc/enter/?: back   ↑/↓: scroll"),
+	)
 }
 
 func (p *Panel) orphanedTabLabel() string {

@@ -64,6 +64,43 @@ remember the syntax of either package manager.
 - **PPA management (apt)**: list, add and remove third-party repositories
   from inside the TUI, gated behind an explicit warning since a bad PPA
   can break `apt update` for the whole system.
+- **Install a specific version, or downgrade (`V`, apt)**: pick from every
+  version `apt-cache madison` knows about across your configured repos,
+  not just the one candidate apt would offer on its own — useful right
+  after an upgrade turns out to be the one you wanted to avoid.
+- **Revert (`V`, snap)**: snap's own idiomatic undo — restores the
+  previous revision's binary *and* its data/config, not just an older
+  version number.
+
+### 🧹 Cleanup & insight
+
+These go beyond wrapping `apt`/`snap` commands — they answer questions
+neither tool (nor any TUI wrapping them) normally surfaces on its own:
+
+- **Disk cleanup explorer (`K`)**: old kernel packages apt's own
+  `autoremove` deliberately leaves behind, leftover config files from
+  already-removed packages (`dpkg`'s "rc" state — never cleaned up
+  automatically), and disabled old snap revisions kept as a rollback
+  safety net nobody ever revisits. Shows total reclaimable space, purge
+  one finding at a time with the same confirm-then-run flow as every
+  other privileged action.
+- **"Why is this installed?" (`W`)**: whether the selected package was
+  explicitly asked for or only pulled in as a dependency, plus a
+  navigable tree of what currently depends on it — drill into any
+  reverse dependency to ask the same question about *it*, instead of
+  piping `apt-cache rdepends` through your own head.
+- **apt+snap overlap view (`O`)**: packages installed via *both* backends
+  at once (Canonical has, at times, silently substituted apt packages
+  like Firefox with a snap "transitional" package — this is how you'd
+  actually notice), and installed snaps that haven't been refreshed in
+  6+ months, using the snap's own on-disk file timestamp rather than any
+  locale-dependent text. apt already flags upgradable packages; snap has
+  no equivalent signal for "this has sat untouched for years," which
+  real-world surveys of installed snaps have found is common.
+- **Unattended-upgrades dashboard (`A`, apt)**: whether silent background
+  upgrades are even enabled, what the last automatic run actually
+  touched, and when the next one is scheduled — normally visible only by
+  digging through `/var/log/unattended-upgrades/` by hand.
 
 ### 🎨 Make it yours
 
@@ -152,6 +189,11 @@ pkgtui
 | `C`         | View the selected package's changelog (apt) |
 | `P`         | Manage third-party repositories / PPAs (apt) |
 | `s`         | Sync the cache (`apt-get update`; no-op on snap) |
+| `K`         | Disk cleanup explorer: old kernels, leftover configs, disabled snap revisions |
+| `W`         | Why is the selected package installed (manual vs. dependency, reverse-dep tree) |
+| `A`         | Unattended-upgrades status (apt)            |
+| `O`         | apt+snap overlap view: duplicate installs, stale snaps |
+| `V`         | Install a specific version of the selected package / downgrade (apt); revert to the previous revision (snap) |
 | `y` / `n`   | Confirm / cancel an action                  |
 | `esc`       | Go back                                     |
 | `,`         | Open settings (theme, keybindings)          |

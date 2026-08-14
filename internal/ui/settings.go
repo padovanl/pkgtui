@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -102,22 +103,54 @@ func (s *settingsScreen) handleKey(msg tea.KeyMsg) (changed bool) {
 	return false
 }
 
+// View renders the settings screen inside a fixed-height box that scrolls
+// to keep the selected row visible, rather than always drawing every row:
+// a fixed list of rows this list only grows (rebindable actions accumulate
+// as features gain their own keybinding) is exactly the failure class that
+// already broke the help screen once — content taller than a modest
+// terminal pushed the title itself off the top. Centered-in-the-terminal
+// placement is dropped in favor of the same top-aligned title+box+hint
+// layout every other scrollable screen (detail, changelog, help) already
+// uses, for the same reason: a box only as tall as it needs to be can't
+// make that guarantee once its content is allowed to exceed the terminal.
 func (s *settingsScreen) View(width, height int) string {
-	rows := []string{
-		titleStyle.Render("pkgtui — settings"),
-		"",
-		s.row(0, fmt.Sprintf("Theme: %s", CurrentTheme()), fmt.Sprintf("%d/%d", themeIndex()+1, len(ThemeNames()))),
-		"",
-		helpSectionStyle.Render("Keybindings (enter to rebind)"),
+	var rows []string
+	cursorLine := 0
+	add := func(idx int, text string) {
+		if idx == s.cursor {
+			cursorLine = len(rows)
+		}
+		rows = append(rows, text)
 	}
+
+	add(0, s.row(0, fmt.Sprintf("Theme: %s", CurrentTheme()), fmt.Sprintf("%d/%d", themeIndex()+1, len(ThemeNames()))))
+	rows = append(rows, "", helpSectionStyle.Render("Keybindings (enter to rebind)"))
 	for i, e := range rebindableKeys() {
 		k := "-"
 		if ks := e.ptr.Keys(); len(ks) > 0 {
 			k = displayKey(ks[0])
 		}
-		rows = append(rows, s.row(i+1, e.label, k))
+		add(i+1, s.row(i+1, e.label, k))
 	}
-	rows = append(rows, "", s.row(s.resetRow(), "Reset keybindings to defaults", ""))
+	rows = append(rows, "")
+	add(s.resetRow(), s.row(s.resetRow(), "Reset keybindings to defaults", ""))
+
+	// +6 for the outer title line, hint line, and the box's own
+	// border+padding (2+2) — see the matching comment on Panel.setSize,
+	// which sizes its own scrollable screens (detail/changelog/help) the
+	// same way for the exact same reason.
+	visible := rows
+	if boxHeight := maxInt(height-6, 3); len(rows) > boxHeight {
+		start := cursorLine - boxHeight/2
+		if start < 0 {
+			start = 0
+		}
+		if max := len(rows) - boxHeight; start > max {
+			start = max
+		}
+		visible = rows[start : start+boxHeight]
+	}
+
 	hint := "↑/↓ move   enter select/rebind   esc close"
 	switch s.cursor {
 	case 0:
@@ -125,10 +158,19 @@ func (s *settingsScreen) View(width, height int) string {
 	case s.resetRow():
 		hint = "↑/↓ move   enter reset all keybindings   esc close"
 	}
-	rows = append(rows, "", dimStyle.Render(s.statusMsg), "", dimStyle.Render(hint))
+	footer := dimStyle.Render(hint)
+	if s.statusMsg != "" {
+		// Always shown regardless of scroll position, unlike the rows
+		// above: a rebind confirmation scrolled out of view along with
+		// everything else would defeat the point of showing it at all.
+		footer = dimStyle.Render(s.statusMsg) + "   " + footer
+	}
 
-	body := lipgloss.JoinVertical(lipgloss.Left, rows...)
-	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, helpBoxStyle.Render(body))
+	return lipgloss.JoinVertical(lipgloss.Left,
+		titleStyle.Render(" pkgtui — settings "),
+		detailBoxStyle.Width(maxInt(width-4, 10)).Render(strings.Join(visible, "\n")),
+		footer,
+	)
 }
 
 func (s *settingsScreen) row(idx int, label, value string) string {
