@@ -277,6 +277,30 @@ func TestParseMadisonOutput(t *testing.T) {
 	}
 }
 
+func TestParseKeptBackOutput(t *testing.T) {
+	out := `Reading package lists...
+Building dependency tree...
+Reading state information...
+Calculating upgrade...
+The following packages have been kept back:
+  linux-generic linux-headers-generic linux-image-generic
+  another-package
+0 upgraded, 0 newly installed, 0 to remove and 4 not upgraded.
+`
+	got := parseKeptBackOutput(out)
+	want := []string{"linux-generic", "linux-headers-generic", "linux-image-generic", "another-package"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("parseKeptBackOutput() = %v, want %v", got, want)
+	}
+}
+
+func TestParseKeptBackOutputNothingKeptBack(t *testing.T) {
+	out := "Reading package lists...\nBuilding dependency tree...\n0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.\n"
+	if got := parseKeptBackOutput(out); len(got) != 0 {
+		t.Errorf("parseKeptBackOutput() = %v, want empty", got)
+	}
+}
+
 func TestParseUnattendedUpgradesLogNoMatches(t *testing.T) {
 	ts, pkgs := parseUnattendedUpgradesLog("nothing relevant here\n")
 	if ts != "" || pkgs != nil {

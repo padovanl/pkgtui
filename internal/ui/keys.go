@@ -33,6 +33,9 @@ type keyMap struct {
 	Unattended  key.Binding
 	Overlap     key.Binding
 	Version     key.Binding
+	Metrics     key.Binding
+	Conflicts   key.Binding
+	Log         key.Binding
 }
 
 var keys = keyMap{
@@ -66,6 +69,9 @@ var keys = keyMap{
 	Unattended:  key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "auto-upgrades")),
 	Overlap:     key.NewBinding(key.WithKeys("O"), key.WithHelp("O", "apt+snap overlap")),
 	Version:     key.NewBinding(key.WithKeys("V"), key.WithHelp("V", "install a version / revert")),
+	Metrics:     key.NewBinding(key.WithKeys("M"), key.WithHelp("M", "metrics dashboard")),
+	Conflicts:   key.NewBinding(key.WithKeys("X"), key.WithHelp("X", "upgrade conflicts")),
+	Log:         key.NewBinding(key.WithKeys("L"), key.WithHelp("L", "action log")),
 }
 
 // bindingEntry is one row of the rebindable-keys registry used by both the
@@ -112,6 +118,9 @@ func rebindableKeys() []bindingEntry {
 		{"unattended", "Unattended-upgrades status", &keys.Unattended},
 		{"overlap", "apt+snap overlap view", &keys.Overlap},
 		{"version", "Install a specific version / revert", &keys.Version},
+		{"metrics", "Metrics dashboard", &keys.Metrics},
+		{"conflicts", "Upgrade conflicts", &keys.Conflicts},
+		{"log", "Action log", &keys.Log},
 	}
 }
 

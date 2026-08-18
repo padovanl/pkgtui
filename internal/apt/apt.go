@@ -287,6 +287,62 @@ func (m *Manager) InstallVersionCmd(name, version string) []string {
 	return pkg.MaybeSudo([]string{"apt-get", "install", "-y", name + "=" + version})
 }
 
+// parseKeptBackOutput extracts package names from "apt-get upgrade -s"'s
+// "The following packages have been kept back:" section: packages with an
+// upgrade available that a conservative upgrade won't perform because it
+// would need to install or remove something else first. The section is a
+// run of "  "-indented lines (names wrapped across several lines for a
+// long list), terminated by the first line that isn't indented that way.
+func parseKeptBackOutput(out string) []string {
+	const marker = "The following packages have been kept back:"
+	var names []string
+	inSection := false
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, marker) {
+			inSection = true
+			continue
+		}
+		if !inSection {
+			continue
+		}
+		if !strings.HasPrefix(line, "  ") {
+			break
+		}
+		names = append(names, strings.Fields(line)...)
+	}
+	return names
+}
+
+// UpgradeConflicts reports packages a conservative "apt-get upgrade" would
+// leave behind (as opposed to "upgrade all" in this UI, which already uses
+// dist-upgrade and resolves most of these on its own — see UpgradeCmd).
+// Implements pkg.ConflictReporter.
+func (m *Manager) UpgradeConflicts() ([]pkg.UpgradeConflict, error) {
+	out, err := exec.Command("apt-get", "upgrade", "-s").Output()
+	if err != nil {
+		return nil, fmt.Errorf("apt-get upgrade -s: %w", err)
+	}
+	names := parseKeptBackOutput(string(out))
+	if len(names) == 0 {
+		return nil, nil
+	}
+	held := map[string]bool{}
+	if entries, err := installedEntries(); err == nil {
+		for name, e := range entries {
+			held[name] = e.Held
+		}
+	}
+	items := make([]pkg.UpgradeConflict, 0, len(names))
+	for _, name := range names {
+		reason := "needs a dependency change (install/remove something else) a plain upgrade won't perform on its own"
+		if held[name] {
+			reason = "held (apt-mark hold)"
+		}
+		items = append(items, pkg.UpgradeConflict{Name: name, Reason: reason})
+	}
+	return items, nil
+}
+
 const autoUpgradesConfigPath = "/etc/apt/apt.conf.d/20auto-upgrades"
 const unattendedUpgradesLogPath = "/var/log/unattended-upgrades/unattended-upgrades.log"
 
@@ -730,3 +786,4 @@ var _ pkg.DiskAnalyzer = (*Manager)(nil)
 var _ pkg.ProvenanceProvider = (*Manager)(nil)
 var _ pkg.UnattendedUpgradesReporter = (*Manager)(nil)
 var _ pkg.VersionLister = (*Manager)(nil)
+var _ pkg.ConflictReporter = (*Manager)(nil)
