@@ -217,6 +217,23 @@ type Reverter interface {
 	RevertCmd(name string) []string
 }
 
+// UpgradeConflict is a package whose upgrade is blocked by something other
+// than an explicit hold: typically a dependency change (a new or removed
+// package) a conservative upgrade won't perform on its own.
+type UpgradeConflict struct {
+	Name   string
+	Reason string
+}
+
+// ConflictReporter is implemented by backends that can detect upgrades
+// blocked by dependency requirements — distinct from an explicit hold,
+// which the UI already surfaces elsewhere (the ◆ marker). Scoped to apt:
+// "apt-get upgrade" (not dist-upgrade) reports exactly this as packages it
+// "kept back"; snap's flat dependency model has no comparable concept.
+type ConflictReporter interface {
+	UpgradeConflicts() ([]UpgradeConflict, error)
+}
+
 // Staler is implemented by backends that can report when a package's
 // currently installed version was actually last refreshed, so the UI can
 // flag ones that have sat untouched for a long time — apt already surfaces

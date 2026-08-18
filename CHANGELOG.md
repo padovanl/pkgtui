@@ -4,6 +4,28 @@ All notable changes to this project are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
 follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Metrics dashboard** (`M`): installed packages ranked by disk usage as
+  a bar chart, for both backends (snap now reads its own installed size
+  straight off the on-disk revision file, since `snap list` has no size
+  column of its own).
+- **Upgrade conflicts** (`X`, apt): packages a conservative `apt-get
+  upgrade` would keep back because it needs to install or remove
+  something else first — distinct from an explicit hold. "Upgrade all"
+  (`U`) already resolves most of these via `dist-upgrade`; this shows
+  which ones and why.
+- **Action log** (`L`): every privileged action run this session, both
+  backends together, with a timestamp and success/failure.
+
+### Changed
+
+- The "why is this installed?" screen is now a **dependency tree**: a
+  `├──`/`└──` rendering with a breadcrumb trail of the drill-down path,
+  instead of a plain indented list.
+
 ## [1.4.0] - 2026-08-15
 
 ### Added

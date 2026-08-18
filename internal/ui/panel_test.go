@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -73,6 +74,27 @@ type fakeReverterManager struct{ fakeManager }
 
 func (fakeReverterManager) RevertCmd(name string) []string {
 	return []string{"snap", "revert", name}
+}
+
+// fakeMetricsManager wraps fakeManager to return real installed-package
+// data (fakeManager's own ListInstalled always returns nil) for testing
+// the metrics dashboard's sort order.
+type fakeMetricsManager struct{ fakeManager }
+
+func (fakeMetricsManager) ListInstalled() ([]pkg.Package, error) {
+	return []pkg.Package{
+		{Name: "small", Size: 100},
+		{Name: "big", Size: 900000},
+		{Name: "medium", Size: 5000},
+	}, nil
+}
+
+// fakeConflictManager wraps fakeManager to additionally implement
+// pkg.ConflictReporter.
+type fakeConflictManager struct{ fakeManager }
+
+func (fakeConflictManager) UpgradeConflicts() ([]pkg.UpgradeConflict, error) {
+	return []pkg.UpgradeConflict{{Name: "linux-generic", Reason: "needs a dependency change"}}, nil
 }
 
 // TestSearchKeyRecomputesListHeight guards against a regression where
@@ -317,7 +339,7 @@ func TestProvenanceListScrollsWithManyReverseDeps(t *testing.T) {
 	if len(lines) > termHeight+2 { // small allowance, matching the box-chrome screens
 		t.Fatalf("rendered %d lines for a %d-row terminal, want it bounded", len(lines), termHeight)
 	}
-	if !strings.Contains(p.View(), "Why is cyrus-common installed?") {
+	if !strings.Contains(p.View(), "Dependency tree") || !strings.Contains(p.View(), "cyrus-common") {
 		t.Error("title is missing from the rendered output (pushed off-screen by the unbounded list?)")
 	}
 	if !strings.Contains(p.View(), names[p.provenanceCursor]) {
@@ -348,6 +370,176 @@ func TestDiskListScrollsWithManyItems(t *testing.T) {
 	}
 	if !strings.Contains(p.View(), items[p.diskCursor].Name) {
 		t.Errorf("the selected row (%q) isn't visible in the rendered output; the scroll window didn't follow the cursor", items[p.diskCursor].Name)
+	}
+}
+
+// TestMetricsSortedBySizeDescending exercises the metrics dashboard's whole
+// point: it's a ranking, not just a listing.
+func TestMetricsSortedBySizeDescending(t *testing.T) {
+	p := NewPanel(fakeMetricsManager{})
+	p.setSize(100, 30)
+
+	np, cmd := p.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("M")})
+	p = np
+	if p.screen != screenMetrics {
+		t.Fatalf("screen = %v, want screenMetrics", p.screen)
+	}
+	if cmd == nil {
+		t.Fatal("expected a load command")
+	}
+
+	p, _ = p.Update(p.loadMetricsCmd()())
+	if len(p.metrics) != 3 {
+		t.Fatalf("metrics = %v, want 3 entries", p.metrics)
+	}
+	for i := 1; i < len(p.metrics); i++ {
+		if p.metrics[i-1].Size < p.metrics[i].Size {
+			t.Fatalf("metrics not sorted descending by size: %v", p.metrics)
+		}
+	}
+	if p.metrics[0].Name != "big" {
+		t.Errorf("metrics[0] = %q, want %q (the largest)", p.metrics[0].Name, "big")
+	}
+}
+
+// TestConflictsScreenLoadsWhenSupported exercises "X" on a backend that
+// implements pkg.ConflictReporter.
+func TestConflictsScreenLoadsWhenSupported(t *testing.T) {
+	p := NewPanel(fakeConflictManager{})
+	p.setSize(100, 30)
+
+	np, _ := p.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("X")})
+	p = np
+	if p.screen != screenConflicts {
+		t.Fatalf("screen = %v, want screenConflicts", p.screen)
+	}
+
+	p, _ = p.Update(p.loadConflictsCmd()())
+	if len(p.conflicts) != 1 || p.conflicts[0].Name != "linux-generic" {
+		t.Fatalf("conflicts = %v, want a single linux-generic entry", p.conflicts)
+	}
+}
+
+// TestConflictsUnavailableShowsMessage guards the fallback for a backend
+// without pkg.ConflictReporter (snap): "X" must not switch screens, only
+// explain why.
+func TestConflictsUnavailableShowsMessage(t *testing.T) {
+	p := NewPanel(fakeManager{})
+	p.setSize(100, 30)
+
+	np, _ := p.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("X")})
+	p = np
+	if p.screen != screenList {
+		t.Fatalf("screen = %v, want screenList (unavailable, shouldn't switch screens)", p.screen)
+	}
+	if p.statusMsg == "" {
+		t.Error("expected a status message explaining conflicts aren't available")
+	}
+}
+
+// TestActionLogRecordsAndDisplays exercises the whole path: dismissRunning
+// logs an action (success or failure), and the log screen ("L") shows it.
+func TestActionLogRecordsAndDisplays(t *testing.T) {
+	old := sessionLog
+	sessionLog = nil
+	defer func() { sessionLog = old }()
+
+	logAction("apt", []string{"sudo", "apt-get", "install", "-y", "curl"}, nil)
+	logAction("apt", []string{"sudo", "apt-get", "remove", "-y", "cowsay"}, errors.New("boom"))
+
+	if len(sessionLog) != 2 {
+		t.Fatalf("sessionLog has %d entries, want 2", len(sessionLog))
+	}
+	if sessionLog[0].summary != "apt-get install -y curl" {
+		t.Errorf("summary = %q, want the sudo prefix stripped", sessionLog[0].summary)
+	}
+	if !sessionLog[0].ok {
+		t.Error("first entry should be marked successful")
+	}
+	if sessionLog[1].ok {
+		t.Error("second entry should be marked failed")
+	}
+
+	p := NewPanel(fakeManager{})
+	p.setSize(100, 30)
+	np, _ := p.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("L")})
+	p = np
+	if p.screen != screenLog {
+		t.Fatalf("screen = %v, want screenLog", p.screen)
+	}
+	view := p.View()
+	if !strings.Contains(view, "curl") || !strings.Contains(view, "cowsay") {
+		t.Errorf("log view is missing expected entries: %q", view)
+	}
+}
+
+// TestMetricsListScrollsWithManyPackages, TestConflictsListScrollsWithManyEntries
+// and TestLogScrollsWithManyEntries guard these three new screens against
+// the exact overflow bug that hit the disk-cleanup and provenance screens
+// live (see TestProvenanceListScrollsWithManyReverseDeps): an unbounded
+// list pushing the screen's own title off the top of the terminal.
+func TestMetricsListScrollsWithManyPackages(t *testing.T) {
+	const termHeight = 30
+	pkgs := make([]pkg.Package, 60)
+	for i := range pkgs {
+		pkgs[i] = pkg.Package{Name: fmt.Sprintf("pkg-%02d", i), Size: int64(60-i) * 1024}
+	}
+	p := NewPanel(fakeManager{})
+	p.setSize(100, termHeight)
+	p.screen = screenMetrics
+	p.metrics = pkgs
+	p.metricsCursor = 45
+
+	lines := strings.Split(p.View(), "\n")
+	if len(lines) > termHeight+2 {
+		t.Fatalf("rendered %d lines for a %d-row terminal, want it bounded", len(lines), termHeight)
+	}
+	if !strings.Contains(p.View(), pkgs[p.metricsCursor].Name) {
+		t.Errorf("selected row %q not visible in the rendered output", pkgs[p.metricsCursor].Name)
+	}
+}
+
+func TestConflictsListScrollsWithManyEntries(t *testing.T) {
+	const termHeight = 30
+	items := make([]pkg.UpgradeConflict, 60)
+	for i := range items {
+		items[i] = pkg.UpgradeConflict{Name: fmt.Sprintf("pkg-%02d", i), Reason: "blocked"}
+	}
+	p := NewPanel(fakeManager{})
+	p.setSize(100, termHeight)
+	p.screen = screenConflicts
+	p.conflicts = items
+	p.conflictsCursor = 45
+
+	lines := strings.Split(p.View(), "\n")
+	if len(lines) > termHeight+2 {
+		t.Fatalf("rendered %d lines for a %d-row terminal, want it bounded", len(lines), termHeight)
+	}
+	if !strings.Contains(p.View(), items[p.conflictsCursor].Name) {
+		t.Errorf("selected row %q not visible in the rendered output", items[p.conflictsCursor].Name)
+	}
+}
+
+func TestLogScrollsWithManyEntries(t *testing.T) {
+	const termHeight = 30
+	old := sessionLog
+	sessionLog = nil
+	defer func() { sessionLog = old }()
+	for i := range 60 {
+		logAction("apt", []string{"apt-get", "install", "-y", fmt.Sprintf("pkg-%02d", i)}, nil)
+	}
+
+	p := NewPanel(fakeManager{})
+	p.setSize(100, termHeight)
+	p.screen = screenLog
+	p.logCursor = 45
+
+	lines := strings.Split(p.View(), "\n")
+	if len(lines) > termHeight+2 {
+		t.Fatalf("rendered %d lines for a %d-row terminal, want it bounded", len(lines), termHeight)
+	}
+	if !strings.Contains(p.View(), "pkg-45") {
+		t.Error("selected row not visible in the rendered output")
 	}
 }
 

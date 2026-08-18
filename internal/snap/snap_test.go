@@ -11,6 +11,15 @@ import (
 )
 
 func TestParseListOutput(t *testing.T) {
+	// snapFileSize looks under the real snapsDir unless a test points it
+	// elsewhere; on a machine that happens to have a snap installed at
+	// exactly one of the name/revision combos below, leaving the real path
+	// in place would make this test's outcome depend on that machine's own
+	// snap installation instead of just the fixture text above it.
+	old := snapsDir
+	snapsDir = t.TempDir()
+	defer func() { snapsDir = old }()
+
 	out := "Name                       Version          Rev    Tracking       Publisher   Notes\n" +
 		"bare                       1.0              5      latest/stable  canonical✓  base\n" +
 		"core22                     20260225         1612   latest/stable  canonical✓  base\n" +
@@ -132,6 +141,30 @@ func TestRefreshTime(t *testing.T) {
 
 	if _, err := m.RefreshTime("does-not-exist", "1"); err == nil {
 		t.Error("RefreshTime() for a missing revision file: want an error, got nil")
+	}
+}
+
+// TestParseListOutputPopulatesSize guards the metrics dashboard's data
+// source: "snap list" itself has no size column at all (unlike dpkg's
+// Installed-Size for apt), so Size has to come from statting the
+// installed revision's own squashfs file instead.
+func TestParseListOutputPopulatesSize(t *testing.T) {
+	dir := t.TempDir()
+	old := snapsDir
+	snapsDir = dir
+	defer func() { snapsDir = old }()
+
+	path := filepath.Join(dir, "firefox_3212.snap")
+	if err := os.WriteFile(path, make([]byte, 1234), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := "Name     Version  Rev    Tracking       Publisher   Notes\n" +
+		"firefox  128.0    3212   latest/stable  mozilla✓    -\n"
+
+	got := parseListOutput(out)
+	if got["firefox"].Size != 1234 {
+		t.Errorf("firefox.Size = %d, want 1234", got["firefox"].Size)
 	}
 }
 
