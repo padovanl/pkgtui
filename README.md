@@ -85,11 +85,12 @@ neither tool (nor any TUI wrapping them) normally surfaces on its own:
   safety net nobody ever revisits. Shows total reclaimable space, purge
   one finding at a time with the same confirm-then-run flow as every
   other privileged action.
-- **"Why is this installed?" (`W`)**: whether the selected package was
-  explicitly asked for or only pulled in as a dependency, plus a
-  navigable tree of what currently depends on it — drill into any
-  reverse dependency to ask the same question about *it*, instead of
-  piping `apt-cache rdepends` through your own head.
+- **Dependency tree (`W`)**: whether the selected package was explicitly
+  asked for or only pulled in as a dependency, plus a navigable
+  `├──`/`└──` tree of what currently depends on it, with a breadcrumb
+  trail — drill into any reverse dependency to ask the same question
+  about *it*, instead of piping `apt-cache rdepends` through your own
+  head.
 - **apt+snap overlap view (`O`)**: packages installed via *both* backends
   at once (Canonical has, at times, silently substituted apt packages
   like Firefox with a snap "transitional" package — this is how you'd
@@ -102,6 +103,20 @@ neither tool (nor any TUI wrapping them) normally surfaces on its own:
   upgrades are even enabled, what the last automatic run actually
   touched, and when the next one is scheduled — normally visible only by
   digging through `/var/log/unattended-upgrades/` by hand.
+- **Metrics dashboard (`M`)**: installed packages ranked by disk usage as
+  a bar chart, for both backends (snap has no size column of its own in
+  `snap list`, so pkgtui reads it straight off the installed revision's
+  file on disk instead).
+- **Upgrade conflicts (`X`, apt)**: packages a conservative `apt-get
+  upgrade` would leave behind because it needs to install or remove
+  something else first — distinct from an explicit hold, which already
+  has its own `◆` marker. "Upgrade all" (`U`) already resolves most of
+  these on its own (it uses `dist-upgrade`); this is what tells you
+  *which* ones and *why*.
+- **Action log (`L`)**: every privileged action run this session, both
+  backends together, with a timestamp and success/failure — a running
+  record of what you actually did, without digging through shell
+  history.
 
 ### 🎨 Make it yours
 
@@ -195,6 +210,9 @@ pkgtui
 | `A`         | Unattended-upgrades status (apt)            |
 | `O`         | apt+snap overlap view: duplicate installs, stale snaps |
 | `V`         | Install a specific version of the selected package / downgrade (apt); revert to the previous revision (snap) |
+| `M`         | Metrics dashboard: installed packages ranked by disk usage |
+| `X`         | Upgrade conflicts: packages a plain upgrade would keep back (apt) |
+| `L`         | Action log: what's run this session, and whether it succeeded |
 | `y` / `n`   | Confirm / cancel an action                  |
 | `esc`       | Go back                                     |
 | `,`         | Open settings (theme, keybindings)          |

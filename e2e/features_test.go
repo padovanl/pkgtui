@@ -32,10 +32,10 @@ func TestProvenanceScreenOpensAndCloses(t *testing.T) {
 
 	h.sendKey("down") // land on a real row, not just whatever the cursor starts on
 	h.sendText("W")
-	h.waitFor("Why is", 5*time.Second)
+	h.waitFor("Dependency tree", 5*time.Second)
 
 	h.sendKey("esc")
-	h.waitForAbsent("Why is", 3*time.Second)
+	h.waitForAbsent("Dependency tree", 3*time.Second)
 	h.waitFor("APT — Installed", 2*time.Second)
 }
 
@@ -106,5 +106,48 @@ func TestOverlapScreenOpensAndCloses(t *testing.T) {
 
 	h.sendKey("esc")
 	h.waitForAbsent("overlap & staleness", 3*time.Second)
+	h.waitFor("APT — Installed", 2*time.Second)
+}
+
+// TestMetricsScreenOpensAndCloses covers "M": the disk-usage bar chart
+// opens (real dpkg-query output on whatever machine runs this test) and
+// esc returns to the list.
+func TestMetricsScreenOpensAndCloses(t *testing.T) {
+	h := newHarness(t)
+	h.waitReady()
+
+	h.sendText("M")
+	h.waitFor("Disk usage by package", 5*time.Second)
+
+	h.sendKey("esc")
+	h.waitForAbsent("Disk usage by package", 3*time.Second)
+	h.waitFor("APT — Installed", 2*time.Second)
+}
+
+// TestConflictsScreenOpensAndCloses covers "X" on the apt tab: the upgrade
+// conflicts screen opens and esc returns to the list.
+func TestConflictsScreenOpensAndCloses(t *testing.T) {
+	h := newHarness(t)
+	h.waitReady()
+
+	h.sendText("X")
+	h.waitFor("Upgrade conflicts", 5*time.Second)
+
+	h.sendKey("esc")
+	h.waitForAbsent("Upgrade conflicts", 3*time.Second)
+	h.waitFor("APT — Installed", 2*time.Second)
+}
+
+// TestLogScreenOpensAndCloses covers "L": the action log opens (empty at
+// startup, nothing has run yet) and esc returns to the list.
+func TestLogScreenOpensAndCloses(t *testing.T) {
+	h := newHarness(t)
+	h.waitReady()
+
+	h.sendText("L")
+	h.waitFor("Action log", 5*time.Second)
+
+	h.sendKey("esc")
+	h.waitForAbsent("Action log", 3*time.Second)
 	h.waitFor("APT — Installed", 2*time.Second)
 }

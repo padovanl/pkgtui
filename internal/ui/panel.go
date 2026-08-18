@@ -51,6 +51,9 @@ const (
 	screenProvenance
 	screenUnattended
 	screenVersion
+	screenMetrics
+	screenConflicts
+	screenLog
 )
 
 // pendingAction holds a destructive/privileged action awaiting user
@@ -175,6 +178,22 @@ type versionsResultMsg struct {
 
 func (m versionsResultMsg) Backend() string { return m.backend }
 
+type metricsResultMsg struct {
+	backend string
+	pkgs    []pkg.Package
+	err     error
+}
+
+func (m metricsResultMsg) Backend() string { return m.backend }
+
+type conflictsResultMsg struct {
+	backend   string
+	conflicts []pkg.UpgradeConflict
+	err       error
+}
+
+func (m conflictsResultMsg) Backend() string { return m.backend }
+
 // Panel is the self-contained UI + state for a single package manager
 // backend (apt or snap).
 type Panel struct {
@@ -190,6 +209,7 @@ type Panel struct {
 	uaReporter         pkg.UnattendedUpgradesReporter
 	versionLister      pkg.VersionLister
 	reverter           pkg.Reverter
+	conflictReporter   pkg.ConflictReporter
 
 	list     list.Model
 	search   textinput.Model
@@ -243,6 +263,18 @@ type Panel struct {
 	versionPkgName string
 	versions       []pkg.PackageVersion
 	versionCursor  int
+
+	// Metrics dashboard: installed packages ranked by disk usage.
+	metrics       []pkg.Package
+	metricsCursor int
+
+	// Upgrade conflicts (apt only): packages a conservative upgrade would
+	// leave behind.
+	conflicts       []pkg.UpgradeConflict
+	conflictsCursor int
+
+	// Action log: browsing cursor into the shared sessionLog.
+	logCursor int
 
 	width, height int
 	listTopOffset int // rows above the list body, for mouse row mapping
@@ -326,6 +358,9 @@ func NewPanel(mgr pkg.Manager) *Panel {
 	}
 	if rv, ok := mgr.(pkg.Reverter); ok {
 		p.reverter = rv
+	}
+	if cr, ok := mgr.(pkg.ConflictReporter); ok {
+		p.conflictReporter = cr
 	}
 	return p
 }
@@ -478,6 +513,27 @@ func (p *Panel) loadVersionsCmd(name string) tea.Cmd {
 	return func() tea.Msg {
 		versions, err := vl.AvailableVersions(name)
 		return versionsResultMsg{backend: mgr.Name(), name: name, versions: versions, err: err}
+	}
+}
+
+// loadMetricsCmd reuses ListInstalled rather than a dedicated interface:
+// every backend already implements pkg.Manager, and both now populate
+// Size (apt from dpkg directly, snap by statting its own squashfs file —
+// see snapFileSize), so there's nothing metrics-specific left to fetch.
+func (p *Panel) loadMetricsCmd() tea.Cmd {
+	mgr := p.mgr
+	return func() tea.Msg {
+		pkgs, err := mgr.ListInstalled()
+		return metricsResultMsg{backend: mgr.Name(), pkgs: pkgs, err: err}
+	}
+}
+
+func (p *Panel) loadConflictsCmd() tea.Cmd {
+	mgr := p.mgr
+	cr := p.conflictReporter
+	return func() tea.Msg {
+		conflicts, err := cr.UpgradeConflicts()
+		return conflictsResultMsg{backend: mgr.Name(), conflicts: conflicts, err: err}
 	}
 }
 
@@ -690,6 +746,27 @@ func (p *Panel) Update(msg tea.Msg) (*Panel, tea.Cmd) {
 		p.err = msg.err
 		if msg.err == nil && msg.name == p.versionPkgName {
 			p.versions = msg.versions
+		}
+		return p, nil
+	case metricsResultMsg:
+		p.loading = false
+		p.err = msg.err
+		if msg.err == nil {
+			sortBySizeDesc(msg.pkgs)
+			p.metrics = msg.pkgs
+			if p.metricsCursor >= len(p.metrics) {
+				p.metricsCursor = maxInt(len(p.metrics)-1, 0)
+			}
+		}
+		return p, nil
+	case conflictsResultMsg:
+		p.loading = false
+		p.err = msg.err
+		if msg.err == nil {
+			p.conflicts = msg.conflicts
+			if p.conflictsCursor >= len(p.conflicts) {
+				p.conflictsCursor = maxInt(len(p.conflicts)-1, 0)
+			}
 		}
 		return p, nil
 	case ptyStartedMsg:
@@ -920,6 +997,18 @@ func (p *Panel) handleKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
 		return p.handleVersionKey(msg)
 	}
 
+	if p.screen == screenMetrics {
+		return p.handleMetricsKey(msg)
+	}
+
+	if p.screen == screenConflicts {
+		return p.handleConflictsKey(msg)
+	}
+
+	if p.screen == screenLog {
+		return p.handleLogKey(msg)
+	}
+
 	if p.search.Focused() {
 		switch msg.Type {
 		case tea.KeyEnter:
@@ -1005,6 +1094,12 @@ func (p *Panel) handleKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
 		return p.openUnattended()
 	case key.Matches(msg, keys.Version):
 		return p.openVersionAction()
+	case key.Matches(msg, keys.Metrics):
+		return p.openMetrics()
+	case key.Matches(msg, keys.Conflicts):
+		return p.openConflicts()
+	case key.Matches(msg, keys.Log):
+		return p.openLog()
 	}
 
 	var cmd tea.Cmd
@@ -1608,6 +1703,7 @@ func (p *Panel) executeConfirmedAction() (*Panel, tea.Cmd) {
 // finished, refreshing whatever list/PPA view we came from.
 func (p *Panel) dismissRunning() (*Panel, tea.Cmd) {
 	exitErr := p.running.exitErr
+	logAction(p.running.backend, p.running.argv, exitErr)
 	p.running.close()
 	p.running = nil
 	p.actionRunning = false
@@ -1691,6 +1787,18 @@ func (p *Panel) View() string {
 
 	if p.screen == screenVersion {
 		return p.renderVersion()
+	}
+
+	if p.screen == screenMetrics {
+		return p.renderMetrics()
+	}
+
+	if p.screen == screenConflicts {
+		return p.renderConflicts()
+	}
+
+	if p.screen == screenLog {
+		return p.renderLog()
 	}
 
 	var sections []string
@@ -1857,24 +1965,37 @@ func clampToWindow(rows []string, cursorIdx, height int) []string {
 
 func (p *Panel) renderProvenance() string {
 	var sections []string
-	sections = append(sections, titleStyle.Render(fmt.Sprintf(" %s — Why is %s installed? ", strings.ToUpper(p.mgr.Name()), p.provenanceName)))
+	sections = append(sections, titleStyle.Render(fmt.Sprintf(" %s — Dependency tree ", strings.ToUpper(p.mgr.Name()))))
+
+	// Breadcrumb: the drill-down trail so far, e.g. "curl › cyrus-common ›
+	// cyrus-caldav" — reinforces that this is one growing path through a
+	// tree, not an unrelated new screen each time you drill into a name.
+	if len(p.provenanceStack) > 0 {
+		trail := append(append([]string{}, p.provenanceStack...), p.provenanceName)
+		sections = append(sections, dimStyle.Render(strings.Join(trail, " › ")))
+	}
 
 	reason := "pulled in as a dependency of something else, not asked for directly"
 	if p.provenance.Manual {
 		reason = "explicitly installed (apt-mark manual)"
 	}
-	sections = append(sections, dimStyle.Render(reason), "")
+	sections = append(sections, titleStyle.Render(p.provenanceName)+dimStyle.Render("  "+reason), "")
 
 	switch {
 	case p.loading:
 		sections = append(sections, p.spinner.View()+" loading...")
 	case len(p.provenance.ReverseDeps) == 0:
-		sections = append(sections, dimStyle.Render("Nothing else currently depends on it."))
+		sections = append(sections, dimStyle.Render("└── nothing else currently depends on it"))
 	default:
-		sections = append(sections, helpSectionStyle.Render(fmt.Sprintf("Depended on by (%d) — enter to drill in:", len(p.provenance.ReverseDeps))))
+		sections = append(sections, helpSectionStyle.Render(fmt.Sprintf("depended on by (%d) — enter to drill in:", len(p.provenance.ReverseDeps))))
 		var rows []string
+		last := len(p.provenance.ReverseDeps) - 1
 		for i, name := range p.provenance.ReverseDeps {
-			line := "  " + name
+			connector := "├── "
+			if i == last {
+				connector = "└── "
+			}
+			line := connector + name
 			maxW := maxInt(p.width-2, 0)
 			if lipgloss.Width(line) > maxW {
 				line = truncateANSI(line, maxW)
@@ -1884,9 +2005,11 @@ func (p *Panel) renderProvenance() string {
 			}
 			rows = append(rows, line)
 		}
-		// -8: title, reason, blank, section header, blank-before-hint,
-		// hint, plus a little margin for the optional error line below.
-		listHeight := maxInt(p.height-8, 3)
+		// -9: title, breadcrumb (reserved whether or not it's shown, so
+		// drilling in never risks overflow), current-name+reason, blank,
+		// section header, blank-before-hint, hint, plus a little margin
+		// for the optional error line below.
+		listHeight := maxInt(p.height-9, 3)
 		sections = append(sections, clampToWindow(rows, p.provenanceCursor, listHeight)...)
 	}
 
@@ -2066,6 +2189,11 @@ func (p *Panel) helpContent() string {
 	if p.reverter != nil {
 		rows = append(rows, row("V", "revert the selected package to its previous revision"))
 	}
+	rows = append(rows, row("M", "metrics dashboard: installed packages ranked by disk usage"))
+	if p.conflictReporter != nil {
+		rows = append(rows, row("X", "upgrade conflicts: packages a plain upgrade would keep back"))
+	}
+	rows = append(rows, row("L", "action log: what's run this session, and whether it succeeded"))
 	rows = append(rows,
 		"",
 		helpSectionStyle.Render("Status symbols"),

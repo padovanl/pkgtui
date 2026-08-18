@@ -43,19 +43,32 @@ func parseListOutput(out string) map[string]pkg.Package {
 			continue // header row
 		}
 		fields := columnSplit(line, 6)
-		if len(fields) < 2 {
+		if len(fields) < 3 {
 			continue
 		}
 		name := strings.TrimSpace(fields[0])
 		version := strings.TrimSpace(fields[1])
+		rev := strings.TrimSpace(fields[2])
 		result[name] = pkg.Package{
 			Name:      name,
 			Installed: version,
+			Size:      snapFileSize(name, rev),
 			Source:    "snap",
 			Status:    pkg.StatusInstalled,
 		}
 	}
 	return result
+}
+
+// snapFileSize returns the on-disk size of a snap's installed revision (its
+// squashfs image under snapsDir), or 0 if it can't be determined — unlike
+// dpkg's Installed-Size for apt, "snap list" has no size column at all.
+func snapFileSize(name, revision string) int64 {
+	info, err := os.Stat(filepath.Join(snapsDir, name+"_"+revision+".snap"))
+	if err != nil {
+		return 0
+	}
+	return info.Size()
 }
 
 func (m *Manager) installedMap() (map[string]pkg.Package, error) {

@@ -499,9 +499,9 @@
         </div>
 
         <div class="feature-window">
-          <div class="term-titlebar"><span>Why is this installed?</span><span class="chip"><span class="k">W</span></span></div>
+          <div class="term-titlebar"><span>Dependency tree</span><span class="chip"><span class="k">W</span></span></div>
           <div class="feature-window-body">
-            <p>Manual install or pulled in as a dependency, plus a navigable tree of reverse dependencies — drill into any of them to ask the same question again.</p>
+            <p>Manual install or pulled in as a dependency, plus a navigable ├──/└── tree of reverse dependencies with a breadcrumb trail — drill into any of them to ask the same question again.</p>
           </div>
         </div>
 
@@ -530,6 +530,27 @@
           <div class="term-titlebar"><span>Revert</span><span class="chip"><span class="k">V</span></span></div>
           <div class="feature-window-body">
             <p>Snap's own idiomatic undo, from inside the TUI: restores the previous revision's binary and its data/config, not just an older version number.</p>
+          </div>
+        </div>
+
+        <div class="feature-window">
+          <div class="term-titlebar"><span>Metrics dashboard</span><span class="chip"><span class="k">M</span></span></div>
+          <div class="feature-window-body">
+            <p>Installed packages ranked by disk usage as a bar chart, for both backends — snap has no size column of its own in "snap list", so pkgtui reads it straight off the installed revision's file on disk.</p>
+          </div>
+        </div>
+
+        <div class="feature-window">
+          <div class="term-titlebar"><span>Upgrade conflicts</span><span class="chip"><span class="k">X</span></span></div>
+          <div class="feature-window-body">
+            <p>Packages a conservative apt-get upgrade would leave behind because it needs to install or remove something else first — distinct from an explicit hold. "Upgrade all" already resolves most of these; this shows which, and why.</p>
+          </div>
+        </div>
+
+        <div class="feature-window">
+          <div class="term-titlebar"><span>Action log</span><span class="chip"><span class="k">L</span></span></div>
+          <div class="feature-window-body">
+            <p>Every privileged action run this session, both backends together, with a timestamp and success/failure — a running record of what you actually did.</p>
           </div>
         </div>
 
@@ -613,6 +634,9 @@ sudo mv pkgtui /usr/local/bin/</pre>
           <tr><td><kbd>A</kbd></td><td>Unattended-upgrades status (apt)</td></tr>
           <tr><td><kbd>O</kbd></td><td>apt + snap overlap: duplicate installs, stale snaps</td></tr>
           <tr><td><kbd>V</kbd></td><td>Install a specific version / downgrade (apt); revert (snap)</td></tr>
+          <tr><td><kbd>M</kbd></td><td>Metrics dashboard: installed packages ranked by disk usage</td></tr>
+          <tr><td><kbd>X</kbd></td><td>Upgrade conflicts: packages a plain upgrade would keep back (apt)</td></tr>
+          <tr><td><kbd>L</kbd></td><td>Action log: what's run this session, and whether it succeeded</td></tr>
           <tr><td><kbd>y</kbd> / <kbd>n</kbd></td><td>Confirm / cancel a pending action</td></tr>
           <tr><td><kbd>esc</kbd></td><td>Go back</td></tr>
           <tr><td><kbd>,</kbd></td><td>Open settings (theme, keybindings)</td></tr>
