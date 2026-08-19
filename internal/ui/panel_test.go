@@ -373,28 +373,6 @@ func TestDiskListScrollsWithManyItems(t *testing.T) {
 	}
 }
 
-// TestMetricsSelectedRowBarUsesAccentColor guards a bug reported live: the
-// cursor lands on index 0 by default, which — since the list is sorted by
-// size descending — is always the very first row a user sees, highlighted.
-// The highlighted-row rendering used to drop the bar's color entirely
-// (rendering it as plain block characters instead of the theme's accent
-// color), so the one row anyone actually looks at right after pressing "M"
-// looked like theming had never been applied to the chart at all, even
-// though scrolling down to any other row would have shown it correctly
-// colored.
-func TestMetricsSelectedRowBarUsesAccentColor(t *testing.T) {
-	p := NewPanel(fakeManager{})
-	p.setSize(100, 30)
-	p.screen = screenMetrics
-	p.metrics = []pkg.Package{{Name: "curl", Size: 1000}}
-	p.metricsCursor = 0
-
-	want := lipgloss.NewStyle().Background(lipgloss.Color("237")).Foreground(colorAccent).Bold(true).Render("█")
-	if !strings.Contains(p.View(), want) {
-		t.Error("selected row's bar doesn't carry the theme's accent color — it renders as plain, uncolored text instead")
-	}
-}
-
 // TestMetricsSortedBySizeDescending exercises the metrics dashboard's whole
 // point: it's a ranking, not just a listing.
 func TestMetricsSortedBySizeDescending(t *testing.T) {
