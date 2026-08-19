@@ -86,22 +86,34 @@ func (p *Panel) renderMetrics() string {
 			barLen = 1 // a nonzero size always shows at least a sliver
 		}
 		selected := i == p.metricsCursor
+		filled := strings.Repeat("█", barLen)
+		empty := strings.Repeat("░", barW-barLen)
 
-		var bar string
+		var line string
 		if selected {
-			// A colored segment inside a selected (inverse-video) row would
-			// have its own background cut the shared highlight short —
-			// same reasoning as the status bullet on a selected row in the
-			// main list — so the bar goes plain here, color reserved for
-			// unselected rows where it can actually coexist with the row's
-			// own background.
-			bar = strings.Repeat("█", barLen) + strings.Repeat("░", barW-barLen)
+			// Built from separately-styled, already-rendered segments
+			// concatenated with "+", each carrying its own explicit
+			// Background(...) — not one plain string wrapped in a single
+			// outer Style.Render() afterwards, which would flatten the
+			// bar's own accent color into the row's plain text color.
+			// Same technique the status bullet on a selected row in the
+			// main list uses, and for the same reason: without it, the one
+			// row a user actually sees highlighted by default (the
+			// largest package, since the cursor starts at 0 on a
+			// size-descending list) would be the one row that looked like
+			// theming wasn't applied to the chart at all.
+			bg := lipgloss.NewStyle().Background(lipgloss.Color("237"))
+			textStyle := bg.Foreground(colorFg).Bold(true)
+			rest := fmt.Sprintf(" %s %*s", empty, sizeW, humanizeBytes(pk.Size))
+			maxW := maxInt(p.width-2, 0)
+			namePart := fmt.Sprintf("%-*s", nameW, name)
+			if pad := maxW - lipgloss.Width(namePart+filled+rest); pad > 0 {
+				rest += strings.Repeat(" ", pad)
+			}
+			line = textStyle.Render(namePart) + bg.Foreground(colorAccent).Bold(true).Render(filled) + textStyle.Render(rest)
 		} else {
-			bar = statusInstalledStyle.Render(strings.Repeat("█", barLen)) + dimStyle.Render(strings.Repeat("░", barW-barLen))
-		}
-		line := fmt.Sprintf("%-*s %s %*s", nameW, name, bar, sizeW, humanizeBytes(pk.Size))
-		if selected {
-			line = lipgloss.NewStyle().Background(lipgloss.Color("237")).Foreground(colorFg).Bold(true).Width(maxInt(p.width-2, 0)).Render(line)
+			bar := statusInstalledStyle.Render(filled) + dimStyle.Render(empty)
+			line = fmt.Sprintf("%-*s %s %*s", nameW, name, bar, sizeW, humanizeBytes(pk.Size))
 		}
 		rows = append(rows, line)
 	}
