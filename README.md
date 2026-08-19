@@ -13,7 +13,7 @@ remember the syntax of either package manager. See [CHANGELOG.md](CHANGELOG.md)
 for what's new.
 
 ![pkgtui apt demo](assets/demo.gif)
-*Searching, inspecting and installing an **apt** package, live.*
+*Searching an **apt** package, its dependency tree (`W`), and the disk-usage metrics dashboard (`M`).*
 
 ![pkgtui snap demo](assets/demo-snap.gif)
 *Same flow on **snap**, including the channel picker (`c` to cycle stable/candidate/beta/edge).*
