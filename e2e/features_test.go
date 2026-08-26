@@ -94,9 +94,9 @@ func TestRevertAsksConfirmation(t *testing.T) {
 	h.waitForAbsent("Revert", 3*time.Second)
 }
 
-// TestOverlapScreenOpensAndCloses covers "O": the app-wide apt+snap overlap
-// view opens (spanning both panels, not just the active one) and esc
-// returns to whichever panel was active.
+// TestOverlapScreenOpensAndCloses covers "O": the app-wide cross-backend
+// overlap view opens (spanning every panel, not just the active one) and
+// esc returns to whichever panel was active.
 func TestOverlapScreenOpensAndCloses(t *testing.T) {
 	h := newHarness(t)
 	h.waitReady()

@@ -1,5 +1,6 @@
 // Command pkgtui is a terminal UI for searching, installing, removing and
-// upgrading apt and snap packages.
+// upgrading packages, with a tab per package manager it finds on the
+// system (apt, snap, flatpak, Homebrew, MacPorts).
 package main
 
 import (

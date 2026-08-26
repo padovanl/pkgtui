@@ -4,6 +4,35 @@ All notable changes to this project are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
 follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Flatpak backend**: browse, search, install, remove and update flatpak
+  apps, including masking an app so `flatpak update` skips it (the `H`
+  hold/unhold key). `s` refreshes the appstream metadata `flatpak search`
+  reads.
+- **Homebrew backend**: formulae and casks in one tab, with the orphaned
+  view (`brew autoremove`), pinning (`brew pin`), "why is this installed"
+  (`installed_on_request` plus `brew uses`), and a disk-cleanup entry for
+  what `brew cleanup` would reclaim. Sizes come from measuring the keg,
+  since brew reports none anywhere.
+- **MacPorts backend**: ports, the outdated list, leaves as the orphaned
+  view, and the inactive port versions MacPorts keeps after every upgrade
+  as disk-cleanup findings.
+- **macOS builds**: `darwin_amd64` and `darwin_arm64` archives are now part
+  of a release, which with the three backends above makes pkgtui usable on
+  Apple Silicon (see [#9](https://github.com/padovanl/pkgtui/issues/9)).
+
+### Changed
+
+- Tabs are now **one per package manager actually present** on the system,
+  instead of a fixed apt and snap pair. A machine with none of them gets
+  all of them listed, each reporting that it isn't available.
+- The overlap view (`O`) spans **every** backend rather than just apt and
+  snap: it now reports any package installed through more than one of them,
+  with each backend's version.
+
 ## [1.5.0]
 
 ### Added

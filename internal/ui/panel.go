@@ -2144,10 +2144,10 @@ func (p *Panel) helpContent() string {
 
 	rows := []string{
 		helpSectionStyle.Render("Navigation"),
-		row("← / →", "switch backend (apt / snap)"),
+		row("← / →", "switch backend (one tab per package manager found)"),
 		row("tab", "switch view (Installed / Upgradable"+p.orphanedTabLabel()+" / Search)"),
 		row("↑/↓, j/k", "move selection"),
-		row("/", "search the full apt/snap catalog, then enter to run it"),
+		row("/", "search the backend's full catalog, then enter to run it"),
 		row("f", "filter the packages currently shown, as you type"),
 		row("enter", "package details"),
 		row("esc", "back / cancel filter"),
@@ -2159,7 +2159,7 @@ func (p *Panel) helpContent() string {
 		row("u", "upgrade selected package"),
 		row("U", "upgrade ALL packages (shows what will change first)"),
 		row("S", "sort the current view by installed size"),
-		row("s", "sync package cache (apt only)"),
+		row("s", "sync package cache (backends that have one)"),
 		row("y / n", "confirm / cancel a pending action"),
 	}
 	if p.chanInstaller != nil {
@@ -2199,7 +2199,7 @@ func (p *Panel) helpContent() string {
 		helpSectionStyle.Render("Status symbols"),
 		"  "+legendLine(),
 		"",
-		row("O", "apt+snap overlap: duplicate installs, stale snaps"),
+		row("O", "backend overlap: packages installed more than once, stale installs"),
 		row(",", "settings (theme, keybindings)"),
 		row("ctrl+l", "force a full screen redraw"),
 		row("q", "quit"),

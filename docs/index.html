@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>pkgtui</title>
-<meta name="description" content="pkgtui is a terminal UI to search, install, remove and upgrade apt and snap packages from a single dashboard, in the style of htop.">
+<meta name="description" content="pkgtui is a terminal UI to search, install, remove and upgrade apt, snap, flatpak, Homebrew and MacPorts packages from a single dashboard, in the style of htop.">
 <meta property="og:title" content="pkgtui">
-<meta property="og:description" content="An htop-style terminal UI for apt and snap package management — now with a disk cleanup explorer, provenance tree, unattended-upgrades dashboard, apt+snap overlap view, and version picking.">
+<meta property="og:description" content="An htop-style terminal UI for apt, snap, flatpak, Homebrew and MacPorts package management — with a disk cleanup explorer, dependency tree, unattended-upgrades dashboard, cross-backend overlap view, and version picking.">
 <meta property="og:image" content="https://padovanl.github.io/pkgtui/social-preview.png">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 256 256%22><rect width=%22256%22 height=%22256%22 rx=%2256%22 fill=%22%231a1d24%22/><polygon points=%22128,52 191,89 128,126 65,89%22 fill=%22%235fe085%22/><polygon points=%2265,89 128,126 128,204 65,167%22 fill=%22%23167a40%22/><polygon points=%22191,89 128,126 128,204 191,167%22 fill=%22%2328a85c%22/></svg>">
 <style>
@@ -409,7 +409,7 @@
   <div class="hero-inner">
     <p class="eyebrow">htop, but for packages</p>
     <h1 class="wordmark"><span class="pkg">pkg</span><span class="tui">tui</span><span class="cursor" aria-hidden="true">&nbsp;</span></h1>
-    <p class="tagline">Search, install, remove and upgrade <strong>apt</strong> and <strong>snap</strong> packages from one dashboard — without memorizing either one's syntax.</p>
+    <p class="tagline">Search, install, remove and upgrade <strong>apt</strong>, <strong>snap</strong>, <strong>flatpak</strong>, <strong>Homebrew</strong> and <strong>MacPorts</strong> packages from one dashboard — without memorizing any of their syntaxes. Linux and macOS.</p>
     <div class="cta-row">
       <a class="btn primary" href="https://github.com/padovanl/pkgtui#-installation">Get pkgtui</a>
       <a class="btn secondary" href="https://github.com/padovanl/pkgtui">View source</a>
@@ -457,11 +457,11 @@
 
     <section id="features" class="section">
       <h2>Why pkgtui</h2>
-      <p class="section-lede">The everyday basics of browsing, searching and acting on packages — done once, done well, for both backends at once.</p>
+      <p class="section-lede">The everyday basics of browsing, searching and acting on packages — done once, done well, for every package manager on the machine at once.</p>
       <div class="card-grid">
         <div class="card">
-          <h3><span class="dot dot-installed">●</span>Two backends, one dashboard</h3>
-          <p>Dedicated tabs for apt and snap, each with its own state. Search, filter, sort by size, view reverse dependencies.</p>
+          <h3><span class="dot dot-installed">●</span>Every backend, one dashboard</h3>
+          <p>A tab per package manager found on the system — apt, snap, flatpak, brew, macports — each with its own state. Search, filter, sort by size, view reverse dependencies.</p>
         </div>
         <div class="card">
           <h3><span class="dot dot-upgradable">▲</span>Real live output</h3>
@@ -487,14 +487,14 @@
     </section>
 
     <section id="differentiators" class="section">
-      <h2>Beyond wrapping apt and snap</h2>
-      <p class="section-lede">Neither apt nor snap's own tooling answers these on its own — pkgtui does, from the same dashboard.</p>
+      <h2>Beyond wrapping the package managers</h2>
+      <p class="section-lede">None of these tools answers any of this on its own — pkgtui does, from the same dashboard.</p>
       <div class="window-grid">
 
         <div class="feature-window">
           <div class="term-titlebar"><span>Disk cleanup explorer</span><span class="chip"><span class="k">K</span></span></div>
           <div class="feature-window-body">
-            <p>Old kernel packages apt's own autoremove deliberately leaves behind, leftover config files from already-removed packages, disabled snap revisions nobody ever revisits — with total reclaimable space and a direct purge.</p>
+            <p>Old kernel packages apt's own autoremove deliberately leaves behind, leftover config files from already-removed packages, disabled snap revisions nobody ever revisits, Homebrew's cached downloads, inactive MacPorts versions — with total reclaimable space and a direct purge.</p>
           </div>
         </div>
 
@@ -506,9 +506,9 @@
         </div>
 
         <div class="feature-window">
-          <div class="term-titlebar"><span>apt + snap overlap</span><span class="chip"><span class="k">O</span></span></div>
+          <div class="term-titlebar"><span>backend overlap</span><span class="chip"><span class="k">O</span></span></div>
           <div class="feature-window-body">
-            <p>Packages installed via both backends at once, and snaps that haven't been refreshed in 6+ months — using the snap's own on-disk file timestamp, not locale-dependent text.</p>
+            <p>Packages installed through more than one backend at once — apt and snap, apt and flatpak, brew and MacPorts — and snaps that haven't been refreshed in 6+ months, using the snap's own on-disk file timestamp, not locale-dependent text.</p>
           </div>
         </div>
 
@@ -536,7 +536,7 @@
         <div class="feature-window">
           <div class="term-titlebar"><span>Metrics dashboard</span><span class="chip"><span class="k">M</span></span></div>
           <div class="feature-window-body">
-            <p>Installed packages ranked by disk usage as a bar chart, for both backends — snap has no size column of its own in "snap list", so pkgtui reads it straight off the installed revision's file on disk.</p>
+            <p>Installed packages ranked by disk usage as a bar chart, for every backend that can report one — snap has no size column in "snap list" and brew reports none at all, so pkgtui measures the revision file or the keg itself.</p>
           </div>
         </div>
 
@@ -579,6 +579,7 @@
         <button class="install-tab" role="tab" aria-selected="true" data-target="tab-deb">.deb</button>
         <button class="install-tab" role="tab" aria-selected="false" data-target="tab-snap">.snap</button>
         <button class="install-tab" role="tab" aria-selected="false" data-target="tab-bin">binary</button>
+        <button class="install-tab" role="tab" aria-selected="false" data-target="tab-mac">macOS</button>
         <button class="install-tab" role="tab" aria-selected="false" data-target="tab-src">from source</button>
       </div>
       <div id="tab-deb" class="install-panel active">
@@ -594,6 +595,12 @@ sudo snap install --dangerous --classic pkgtui_&lt;version&gt;_amd64.snap</pre>
       <div id="tab-bin" class="install-panel">
         <pre>curl -fLO https://github.com/padovanl/pkgtui/releases/latest/download/pkgtui_&lt;version&gt;_linux_amd64.tar.gz
 tar -xzf pkgtui_&lt;version&gt;_linux_amd64.tar.gz
+sudo mv pkgtui /usr/local/bin/</pre>
+      </div>
+      <div id="tab-mac" class="install-panel">
+        <pre><span class="comment"># darwin_arm64 on Apple Silicon, darwin_amd64 on Intel</span>
+curl -fLO https://github.com/padovanl/pkgtui/releases/latest/download/pkgtui_&lt;version&gt;_darwin_arm64.tar.gz
+tar -xzf pkgtui_&lt;version&gt;_darwin_arm64.tar.gz
 sudo mv pkgtui /usr/local/bin/</pre>
       </div>
       <div id="tab-src" class="install-panel">
@@ -612,9 +619,9 @@ sudo mv pkgtui /usr/local/bin/</pre>
       <div class="table-scroll">
         <table class="keys">
           <tr><th>Key</th><th>Action</th></tr>
-          <tr><td><kbd>←</kbd> / <kbd>→</kbd></td><td>Switch backend (apt / snap)</td></tr>
+          <tr><td><kbd>←</kbd> / <kbd>→</kbd></td><td>Switch backend (one tab per package manager found)</td></tr>
           <tr><td><kbd>tab</kbd></td><td>Switch view (Installed / Upgradable / Orphaned* / Search)</td></tr>
-          <tr><td><kbd>/</kbd></td><td>Search the full apt/snap catalog, then <kbd>enter</kbd> to run it</td></tr>
+          <tr><td><kbd>/</kbd></td><td>Search the backend's full catalog, then <kbd>enter</kbd> to run it</td></tr>
           <tr><td><kbd>f</kbd></td><td>Filter the packages currently shown, live as you type</td></tr>
           <tr><td><kbd>↑</kbd>/<kbd>↓</kbd>, <kbd>j</kbd>/<kbd>k</kbd></td><td>Navigate the list (mouse wheel and clicks work too)</td></tr>
           <tr><td><kbd>enter</kbd></td><td>Show details for the selected package</td></tr>
@@ -625,14 +632,14 @@ sudo mv pkgtui /usr/local/bin/</pre>
           <tr><td><kbd>U</kbd></td><td>Upgrade <strong>all</strong> packages, with a preview first</td></tr>
           <tr><td><kbd>S</kbd></td><td>Sort the current view by installed size</td></tr>
           <tr><td><kbd>c</kbd></td><td>Cycle the install channel (while confirming a snap install)</td></tr>
-          <tr><td><kbd>H</kbd></td><td>Hold/unhold the selected package (apt)</td></tr>
+          <tr><td><kbd>H</kbd></td><td>Hold/unhold the selected package (apt, flatpak, brew)</td></tr>
           <tr><td><kbd>C</kbd></td><td>View the selected package's changelog (apt)</td></tr>
           <tr><td><kbd>P</kbd></td><td>Manage third-party repositories / PPAs (apt)</td></tr>
-          <tr><td><kbd>s</kbd></td><td>Sync the cache (apt-get update; no-op on snap)</td></tr>
+          <tr><td><kbd>s</kbd></td><td>Sync the cache (apt-get update, flatpak update --appstream, brew update, port selfupdate; no-op on snap)</td></tr>
           <tr><td><kbd>K</kbd></td><td>Disk cleanup: old kernels, leftover configs, disabled revisions</td></tr>
           <tr><td><kbd>W</kbd></td><td>Why is the selected package installed (manual vs. dependency, reverse-dep tree)</td></tr>
           <tr><td><kbd>A</kbd></td><td>Unattended-upgrades status (apt)</td></tr>
-          <tr><td><kbd>O</kbd></td><td>apt + snap overlap: duplicate installs, stale snaps</td></tr>
+          <tr><td><kbd>O</kbd></td><td>Backend overlap: packages installed more than once, stale snaps</td></tr>
           <tr><td><kbd>V</kbd></td><td>Install a specific version / downgrade (apt); revert (snap)</td></tr>
           <tr><td><kbd>M</kbd></td><td>Metrics dashboard: installed packages ranked by disk usage</td></tr>
           <tr><td><kbd>X</kbd></td><td>Upgrade conflicts: packages a plain upgrade would keep back (apt)</td></tr>
@@ -652,7 +659,7 @@ sudo mv pkgtui /usr/local/bin/</pre>
 
 <footer>
   <div class="wrap">
-    <span class="tag">MIT licensed · built for Debian/Ubuntu</span>
+    <span class="tag">MIT licensed · Linux and macOS</span>
     <nav>
       <a class="foot-chip" href="https://github.com/padovanl/pkgtui">GitHub</a>
       <a class="foot-chip" href="https://github.com/padovanl/pkgtui/releases">Releases</a>

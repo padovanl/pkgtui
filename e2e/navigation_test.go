@@ -7,8 +7,9 @@ import (
 	"time"
 )
 
-// TestSwitchBackend covers the apt/snap tab switch ("right"/"left"): the
-// header updates to the other backend and back.
+// TestSwitchBackend covers the backend tab switch ("right"/"left"): the
+// header updates to the next backend and back. apt and snap are the first
+// two tabs on any machine that has both, which is what CI runs on.
 func TestSwitchBackend(t *testing.T) {
 	h := newHarness(t)
 	h.waitReady()

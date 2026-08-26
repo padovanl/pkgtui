@@ -14,8 +14,8 @@ body:
   - type: input
     id: distro
     attributes:
-      label: Distro / install method
-      placeholder: "Ubuntu 22.04, installed via .deb"
+      label: OS / install method
+      placeholder: "Ubuntu 22.04, installed via .deb — or macOS 15.3 (Apple Silicon), darwin_arm64 tarball"
     validations:
       required: true
 
@@ -31,4 +31,4 @@ body:
     id: extra
     attributes:
       label: Anything else
-      description: Terminal emulator, screenshot, relevant apt/snap output, etc.
+      description: Terminal emulator, screenshot, relevant apt/snap/flatpak/brew/port output, etc.

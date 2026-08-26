@@ -20,6 +20,24 @@ builds:
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
 
+  # macOS, once Homebrew/MacPorts became backends of their own: an Intel
+  # and an Apple Silicon build, both from the same pure-Go source (nothing
+  # here needs cgo, so they cross-compile from the Linux release runner).
+  # Kept as a separate build id so the .deb below can name the Linux one
+  # explicitly instead of trying to package a Mach-O binary.
+  - id: pkgtui-darwin
+    main: .
+    binary: pkgtui
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+
 archives:
   - id: pkgtui-archive
     formats: [tar.gz]
@@ -31,6 +49,8 @@ archives:
 
 nfpms:
   - id: pkgtui-deb
+    ids:
+      - pkgtui # the Linux build only: a .deb of a darwin binary is nonsense
     package_name: pkgtui
     file_name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Arch }}
@@ -39,7 +59,8 @@ nfpms:
     maintainer: padovanl
     description: |-
       An htop-style terminal UI (TUI) to search, install, remove and
-      upgrade apt and snap packages.
+      upgrade packages, with a tab per package manager found on the system
+      (apt, snap, flatpak).
     license: MIT
     formats:
       - deb
@@ -47,6 +68,11 @@ nfpms:
     priority: optional
     recommends:
       - snapd
+    # Suggests, not recommends: pkgtui grows a flatpak tab if flatpak is
+    # there, but installing pkgtui is no reason to pull a second package
+    # system onto a machine that doesn't already use one.
+    suggests:
+      - flatpak
     contents:
       - src: ./README.md
         dst: /usr/share/doc/pkgtui/README.md

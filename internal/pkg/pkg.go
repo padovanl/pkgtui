@@ -1,6 +1,6 @@
 // Package pkg defines the shared types and interface implemented by each
-// package manager backend (apt, snap), so the UI layer can treat them
-// uniformly.
+// package manager backend (apt, snap, flatpak, homebrew, macports), so the
+// UI layer can treat them uniformly.
 package pkg
 
 import (
@@ -41,14 +41,15 @@ type Package struct {
 	Summary   string
 	Size      int64 // installed size in bytes, 0 if unknown
 	Status    Status
-	Source    string // "apt" or "snap"
+	Source    string // the backend's Name(), e.g. "apt" or "flatpak"
 	Held      bool   // upgrades blocked (apt-mark hold / snap refresh --hold)
 	Security  bool   // upgrade comes from a security repository/origin
 }
 
-// Manager is implemented by each backend (apt, snap).
+// Manager is implemented by each backend.
 type Manager interface {
-	// Name returns the backend identifier ("apt" or "snap").
+	// Name returns the backend identifier ("apt", "flatpak", ...), used as
+	// the tab label and as Package.Source.
 	Name() string
 
 	// Available reports whether the underlying tool exists on this system.
