@@ -26,7 +26,7 @@ type keyMap struct {
 	Channel     key.Binding
 	Hold        key.Binding
 	Changelog   key.Binding
-	PPA         key.Binding
+	Repos       key.Binding
 	Settings    key.Binding
 	Disk        key.Binding
 	Provenance  key.Binding
@@ -62,7 +62,7 @@ var keys = keyMap{
 	Channel:     key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "channel")),
 	Hold:        key.NewBinding(key.WithKeys("H"), key.WithHelp("H", "hold/unhold")),
 	Changelog:   key.NewBinding(key.WithKeys("C"), key.WithHelp("C", "changelog")),
-	PPA:         key.NewBinding(key.WithKeys("P"), key.WithHelp("P", "PPAs")),
+	Repos:       key.NewBinding(key.WithKeys("P"), key.WithHelp("P", "repositories")),
 	Settings:    key.NewBinding(key.WithKeys(","), key.WithHelp(",", "settings")),
 	Disk:        key.NewBinding(key.WithKeys("K"), key.WithHelp("K", "disk cleanup")),
 	Provenance:  key.NewBinding(key.WithKeys("W"), key.WithHelp("W", "why installed")),
@@ -105,7 +105,11 @@ func rebindableKeys() []bindingEntry {
 		{"sync", "Sync cache", &keys.Sync},
 		{"channel", "Cycle install channel", &keys.Channel},
 		{"changelog", "View changelog", &keys.Changelog},
-		{"ppa", "Manage PPAs", &keys.PPA},
+		// Still called "ppa" on disk, even though the screen now covers
+		// flatpak remotes too: it's the key a rebind is stored under in
+		// config.json, and renaming it would silently drop anyone's
+		// existing rebinding of P.
+		{"ppa", "Manage third-party repositories", &keys.Repos},
 		{"settings", "Open settings", &keys.Settings},
 		{"help", "Help", &keys.Help},
 		{"quit", "Quit", &keys.Quit},

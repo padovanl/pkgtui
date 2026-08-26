@@ -724,19 +724,26 @@ func (m *Manager) Changelog(name string) (string, error) {
 //	deb http://ppa.launchpad.net/someone/something/ubuntu jammy main
 var ppaURLRe = regexp.MustCompile(`ppa\.launchpad(?:content)?\.net/([^/]+)/([^/]+)/ubuntu`)
 
-// ListPPAs scans /etc/apt/sources.list.d for third-party PPA sources
-// add-apt-repository would have created. Implements pkg.PPAManager.
-func (m *Manager) ListPPAs() ([]pkg.PPA, error) {
+// RepoNoun is what apt users call these. Implements pkg.RepoManager.
+func (m *Manager) RepoNoun() string { return "PPA" }
+
+// RepoInputHint shows the form add-apt-repository expects.
+// Implements pkg.RepoManager.
+func (m *Manager) RepoInputHint() string { return "ppa:user/name" }
+
+// ListRepos scans /etc/apt/sources.list.d for third-party PPA sources
+// add-apt-repository would have created. Implements pkg.RepoManager.
+func (m *Manager) ListRepos() ([]pkg.Repo, error) {
 	return listPPAs(), nil
 }
 
-func listPPAs() []pkg.PPA {
+func listPPAs() []pkg.Repo {
 	entries, err := os.ReadDir("/etc/apt/sources.list.d")
 	if err != nil {
 		return nil
 	}
 	seen := map[string]bool{}
-	var ppas []pkg.PPA
+	var ppas []pkg.Repo
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".list") {
 			continue
@@ -759,21 +766,25 @@ func listPPAs() []pkg.PPA {
 				continue
 			}
 			seen[name] = true
-			ppas = append(ppas, pkg.PPA{Name: name, Description: e.Name()})
+			ppas = append(ppas, pkg.Repo{Name: name, Description: e.Name()})
 		}
 	}
 	sort.Slice(ppas, func(i, j int) bool { return ppas[i].Name < ppas[j].Name })
 	return ppas
 }
 
-// AddPPACmd adds a third-party PPA and refreshes the package index.
-func (m *Manager) AddPPACmd(ppa string) []string {
-	return pkg.MaybeSudo([]string{"add-apt-repository", "-y", ppa})
+// AddRepoCmd adds a third-party PPA and refreshes the package index.
+// Implements pkg.RepoManager.
+func (m *Manager) AddRepoCmd(spec string) []string {
+	if strings.TrimSpace(spec) == "" {
+		return nil
+	}
+	return pkg.MaybeSudo([]string{"add-apt-repository", "-y", spec})
 }
 
-// RemovePPACmd removes a previously added PPA.
-func (m *Manager) RemovePPACmd(ppa pkg.PPA) []string {
-	return pkg.MaybeSudo([]string{"add-apt-repository", "--remove", "-y", ppa.Name})
+// RemoveRepoCmd removes a previously added PPA. Implements pkg.RepoManager.
+func (m *Manager) RemoveRepoCmd(repo pkg.Repo) []string {
+	return pkg.MaybeSudo([]string{"add-apt-repository", "--remove", "-y", repo.Name})
 }
 
 var _ pkg.Manager = (*Manager)(nil)
@@ -781,7 +792,7 @@ var _ pkg.OrphanLister = (*Manager)(nil)
 var _ pkg.BatchManager = (*Manager)(nil)
 var _ pkg.Holder = (*Manager)(nil)
 var _ pkg.Changelogger = (*Manager)(nil)
-var _ pkg.PPAManager = (*Manager)(nil)
+var _ pkg.RepoManager = (*Manager)(nil)
 var _ pkg.DiskAnalyzer = (*Manager)(nil)
 var _ pkg.ProvenanceProvider = (*Manager)(nil)
 var _ pkg.UnattendedUpgradesReporter = (*Manager)(nil)

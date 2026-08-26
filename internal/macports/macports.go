@@ -292,6 +292,50 @@ func (m *Manager) ListOrphaned() ([]pkg.Package, error) {
 	return results, nil
 }
 
+// parseDependentsOutput reads "port dependents <name>", which prints a
+// sentence ("The following ports are dependent on vim:", or "vim has no
+// dependents.") followed by one indented port name per dependent. The
+// sentence is the only unindented line, which is what separates it from
+// the names.
+func parseDependentsOutput(out string) []string {
+	var names []string
+	seen := map[string]bool{}
+	for _, line := range strings.Split(out, "\n") {
+		if line == "" || !strings.HasPrefix(line, " ") {
+			continue
+		}
+		f := strings.Fields(line)
+		if len(f) == 0 || seen[f[0]] {
+			continue
+		}
+		seen[f[0]] = true
+		names = append(names, f[0])
+	}
+	return names
+}
+
+// Provenance reports whether name was asked for by name or only pulled in
+// as a dependency, and which installed ports still depend on it. MacPorts
+// records the difference itself — the "requested" flag its registry sets
+// for anything installed directly — so this is a lookup rather than a
+// guess. Implements pkg.ProvenanceProvider.
+func (m *Manager) Provenance(name string) (pkg.Provenance, error) {
+	manual := false
+	if out, err := exec.Command("port", "-q", "echo", "requested").Output(); err == nil {
+		for _, requested := range parseEchoOutput(string(out)) {
+			if requested == name {
+				manual = true
+				break
+			}
+		}
+	}
+	var revdeps []string
+	if out, err := exec.Command("port", "dependents", name).Output(); err == nil {
+		revdeps = parseDependentsOutput(string(out))
+	}
+	return pkg.Provenance{Manual: manual, ReverseDeps: revdeps}, nil
+}
+
 // inactiveDiskItems turns every inactive installed version into a
 // reclaimable-space finding. MacPorts deliberately keeps the previous
 // version of a port around after an upgrade so it can be reactivated
@@ -326,3 +370,4 @@ var _ pkg.Manager = (*Manager)(nil)
 var _ pkg.BatchManager = (*Manager)(nil)
 var _ pkg.OrphanLister = (*Manager)(nil)
 var _ pkg.DiskAnalyzer = (*Manager)(nil)
+var _ pkg.ProvenanceProvider = (*Manager)(nil)

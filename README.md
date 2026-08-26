@@ -69,9 +69,13 @@ or macOS — so you only ever see the ones you actually have. See
   packages marked `[held]` in the list.
 - **Changelog viewer (apt)**: see what actually changed in a package
   before upgrading it (`apt-get changelog`).
-- **PPA management (apt)**: list, add and remove third-party repositories
-  from inside the TUI, gated behind an explicit warning since a bad PPA
-  can break `apt update` for the whole system.
+- **Third-party sources (`P`, apt and flatpak)**: list, add and remove
+  apt PPAs and flatpak remotes from inside the TUI — each screen labelled
+  in that backend's own words, with the exact command shown before it runs
+  and gated behind an explicit warning, since a bad source can break
+  updates for the whole system. Adding Flathub is one line here
+  (`flathub https://dl.flathub.org/repo/flathub.flatpakrepo`, or just the
+  `.flatpakrepo` URL and pkgtui names the remote after it).
 - **Install a specific version, or downgrade (`V`, apt)**: pick from every
   version `apt-cache madison` knows about across your configured repos,
   not just the one candidate apt would offer on its own — useful right
@@ -91,14 +95,19 @@ own:
   already-removed packages (`dpkg`'s "rc" state — never cleaned up
   automatically), disabled old snap revisions kept as a rollback safety net
   nobody ever revisits, Homebrew's cached downloads and superseded kegs,
-  and the inactive port versions MacPorts keeps after every upgrade. Shows
+  the inactive port versions MacPorts keeps after every upgrade, and the
+  flatpak runtimes no installed app needs any more — for that last one the
+  entry hands off to `flatpak uninstall --unused`, which knows the real
+  answer and lists exactly what it removes before doing it, rather than
+  pkgtui guessing at extensions and base runtimes from the outside. Shows
   total reclaimable space, purge one finding at a time with the same
   confirm-then-run flow as every other privileged action.
 - **Dependency tree (`W`)**: whether the selected package was explicitly
   asked for or only pulled in as a dependency, plus a navigable
   `├──`/`└──` tree of what currently depends on it, with a breadcrumb
   trail — drill into any reverse dependency to ask the same question
-  about *it*, instead of piping `apt-cache rdepends` through your own
+  about *it*, instead of piping `apt-cache rdepends`, `brew uses` or
+  `port dependents` through your own
   head.
 - **Backend overlap view (`O`)**: packages installed through *more than
   one* backend at once (Canonical has, at times, silently substituted apt
@@ -232,10 +241,10 @@ pkgtui
 | `c`         | Cycle the install channel (while confirming a snap install) |
 | `H`         | Hold/unhold the selected package (apt, flatpak, brew) |
 | `C`         | View the selected package's changelog (apt) |
-| `P`         | Manage third-party repositories / PPAs (apt) |
+| `P`         | Manage third-party sources: PPAs (apt), remotes (flatpak) |
 | `s`         | Sync the cache (`apt-get update`, `flatpak update --appstream`, `brew update`, `port selfupdate`; no-op on snap) |
 | `K`         | Disk cleanup explorer: old kernels, leftover configs, disabled snap revisions, brew cache, inactive ports |
-| `W`         | Why is the selected package installed (manual vs. dependency, reverse-dep tree) |
+| `W`         | Why is the selected package installed (manual vs. dependency, reverse-dep tree; apt, brew, macports) |
 | `A`         | Unattended-upgrades status (apt)            |
 | `O`         | Backend overlap view: packages installed more than once, stale snaps |
 | `V`         | Install a specific version of the selected package / downgrade (apt); revert to the previous revision (snap) |

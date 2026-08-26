@@ -182,3 +182,72 @@ func TestCommandsNeverUseSudo(t *testing.T) {
 		}
 	}
 }
+
+func TestParseRemotesOutput(t *testing.T) {
+	out := "flathub\tFlathub\thttps://dl.flathub.org/repo/\n" +
+		"gnome-nightly\tGNOME Nightly\thttps://nightly.gnome.org/repo/\n"
+
+	got := parseRemotesOutput(out)
+
+	want := []pkg.Repo{
+		{Name: "flathub", Description: "Flathub — https://dl.flathub.org/repo/"},
+		{Name: "gnome-nightly", Description: "GNOME Nightly — https://nightly.gnome.org/repo/"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("parseRemotesOutput() = %#v, want %#v", got, want)
+	}
+}
+
+// A remote added straight from a repo URL has no title, which must not
+// leave a dangling separator in the description.
+func TestParseRemotesOutputWithoutTitle(t *testing.T) {
+	got := parseRemotesOutput("local\t\thttps://example.org/repo/\n")
+
+	want := []pkg.Repo{{Name: "local", Description: "https://example.org/repo/"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("parseRemotesOutput() = %#v, want %#v", got, want)
+	}
+}
+
+func TestAddRepoCmd(t *testing.T) {
+	m := New()
+
+	cases := []struct {
+		spec string
+		want []string
+	}{
+		{
+			// The documented form: flatpak names the remote itself.
+			spec: "flathub https://dl.flathub.org/repo/flathub.flatpakrepo",
+			want: []string{"flatpak", "remote-add", "--if-not-exists", "flathub", "https://dl.flathub.org/repo/flathub.flatpakrepo"},
+		},
+		{
+			// A bare .flatpakrepo URL is what a project's install page
+			// actually links to; the file's own name becomes the remote's.
+			spec: "https://dl.flathub.org/repo/flathub.flatpakrepo",
+			want: []string{"flatpak", "remote-add", "--if-not-exists", "flathub", "https://dl.flathub.org/repo/flathub.flatpakrepo"},
+		},
+		{spec: "https://example.org/repo/", want: nil}, // no name to infer
+		{spec: "", want: nil},
+		{spec: "too many words here", want: nil},
+	}
+	for _, c := range cases {
+		if got := m.AddRepoCmd(c.spec); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("AddRepoCmd(%q) = %v, want %v", c.spec, got, c.want)
+		}
+	}
+}
+
+func TestHasRuntimes(t *testing.T) {
+	if !hasRuntimes("org.freedesktop.Platform\norg.gnome.Platform\n") {
+		t.Error("hasRuntimes() = false, want true")
+	}
+	// Nothing installed at all: reporting "unused runtimes" here would
+	// promise space that doesn't exist.
+	if hasRuntimes("\n") {
+		t.Error("hasRuntimes(empty) = true, want false")
+	}
+	if hasRuntimes("Application ID\n") {
+		t.Error("hasRuntimes(header only) = true, want false")
+	}
+}

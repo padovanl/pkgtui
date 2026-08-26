@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"regexp"
 	"sort"
 	"strconv"
@@ -359,6 +360,117 @@ func (m *Manager) RemoveManyCmd(names []string) []string {
 	return append([]string{"flatpak", "uninstall", "-y"}, names...)
 }
 
+// RepoNoun is what flatpak calls a source. Implements pkg.RepoManager.
+func (m *Manager) RepoNoun() string { return "remote" }
+
+// RepoInputHint shows the "NAME LOCATION" pair flatpak remote-add takes.
+// Implements pkg.RepoManager.
+func (m *Manager) RepoInputHint() string {
+	return "flathub https://dl.flathub.org/repo/flathub.flatpakrepo"
+}
+
+// parseRemotesOutput parses:
+//
+//	flatpak remotes --columns=name,title,url
+//
+// into one Repo per configured remote.
+func parseRemotesOutput(out string) []pkg.Repo {
+	var repos []pkg.Repo
+	for _, line := range strings.Split(out, "\n") {
+		f := fields(line)
+		name := strings.TrimSpace(f[0])
+		if name == "" || isHeader(f) {
+			continue
+		}
+		// Title and URL both say something worth seeing, and either can be
+		// empty (a remote added from a plain repo URL has no title).
+		var parts []string
+		for _, column := range f[1:] {
+			if c := strings.TrimSpace(column); c != "" {
+				parts = append(parts, c)
+			}
+		}
+		repos = append(repos, pkg.Repo{Name: name, Description: strings.Join(parts, " — ")})
+	}
+	sort.Slice(repos, func(i, j int) bool { return repos[i].Name < repos[j].Name })
+	return repos
+}
+
+// ListRepos lists the configured remotes. Implements pkg.RepoManager.
+func (m *Manager) ListRepos() ([]pkg.Repo, error) {
+	out, err := command("remotes", "--columns=name,title,url").Output()
+	if err != nil && len(out) == 0 {
+		return nil, fmt.Errorf("flatpak remotes: %w", err)
+	}
+	return parseRemotesOutput(string(out)), nil
+}
+
+// AddRepoCmd adds a remote from a "NAME LOCATION" pair. A lone
+// .flatpakrepo URL is accepted too, naming the remote after the file —
+// that's the form people actually have at hand (it's what a project's
+// "install" page links to), and flatpak itself refuses to guess a name.
+// Implements pkg.RepoManager.
+func (m *Manager) AddRepoCmd(spec string) []string {
+	f := strings.Fields(spec)
+	switch len(f) {
+	case 2:
+		return []string{"flatpak", "remote-add", "--if-not-exists", f[0], f[1]}
+	case 1:
+		name := strings.TrimSuffix(path.Base(f[0]), ".flatpakrepo")
+		if name == "" || name == "." || !strings.HasSuffix(f[0], ".flatpakrepo") {
+			return nil
+		}
+		return []string{"flatpak", "remote-add", "--if-not-exists", name, f[0]}
+	default:
+		return nil
+	}
+}
+
+// RemoveRepoCmd deletes a remote. Implements pkg.RepoManager.
+func (m *Manager) RemoveRepoCmd(repo pkg.Repo) []string {
+	return []string{"flatpak", "remote-delete", repo.Name}
+}
+
+// hasRuntimes reports whether any runtime is installed at all, from:
+//
+//	flatpak list --runtime --columns=application
+func hasRuntimes(out string) bool {
+	for _, line := range strings.Split(out, "\n") {
+		f := fields(line)
+		if strings.TrimSpace(f[0]) != "" && !isHeader(f) {
+			return true
+		}
+	}
+	return false
+}
+
+// DiskReport surfaces the runtimes no installed app needs any more, which
+// flatpak keeps indefinitely and which are by far the biggest thing it
+// leaves on disk.
+//
+// Reported as a single entry deliberately: working out *which* runtimes are
+// unused from the outside means asking every app for its runtime and then
+// guessing at extensions and base runtimes (org.gnome.Platform is itself
+// built on org.freedesktop.Platform, which no app ever names), and a wrong
+// guess here uninstalls something still in use. "flatpak uninstall
+// --unused" already knows the real answer, lists exactly what it would
+// remove and asks before doing it — and pkgtui runs it in a real pty where
+// that prompt works. Implements pkg.DiskAnalyzer.
+func (m *Manager) DiskReport() ([]pkg.DiskItem, error) {
+	out, err := command("list", "--runtime", "--columns=application").Output()
+	if err != nil && len(out) == 0 {
+		return nil, nil
+	}
+	if !hasRuntimes(string(out)) {
+		return nil, nil
+	}
+	return []pkg.DiskItem{{
+		Name:   "unused runtimes",
+		Reason: "runtimes no installed app needs any more; flatpak lists exactly which before removing them",
+		Argv:   []string{"flatpak", "uninstall", "--unused"},
+	}}, nil
+}
+
 // HoldCmd masks an app so "flatpak update" skips it. Implements pkg.Holder.
 func (m *Manager) HoldCmd(name string) []string {
 	return []string{"flatpak", "mask", name}
@@ -372,3 +484,5 @@ func (m *Manager) UnholdCmd(name string) []string {
 var _ pkg.Manager = (*Manager)(nil)
 var _ pkg.BatchManager = (*Manager)(nil)
 var _ pkg.Holder = (*Manager)(nil)
+var _ pkg.RepoManager = (*Manager)(nil)
+var _ pkg.DiskAnalyzer = (*Manager)(nil)

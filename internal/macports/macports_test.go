@@ -117,3 +117,24 @@ func TestInactiveDiskItems(t *testing.T) {
 		t.Errorf("first item argv = %v, want %v", argv, want)
 	}
 }
+
+func TestParseDependentsOutput(t *testing.T) {
+	out := "The following ports are dependent on libidn2:\n" +
+		"  curl\n" +
+		"  wget\n"
+
+	got := parseDependentsOutput(out)
+
+	want := []string{"curl", "wget"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("parseDependentsOutput() = %#v, want %#v", got, want)
+	}
+}
+
+// "port dependents" says so in a sentence when there are none, and that
+// sentence must not be read as a dependent named "vim".
+func TestParseDependentsOutputNone(t *testing.T) {
+	if got := parseDependentsOutput("vim has no dependents.\n"); got != nil {
+		t.Errorf("parseDependentsOutput() = %#v, want nil", got)
+	}
+}

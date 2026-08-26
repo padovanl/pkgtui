@@ -480,8 +480,8 @@
           <p>Change any shortcut from inside the app, live, with a one-key reset back to defaults if it goes sideways.</p>
         </div>
         <div class="card">
-          <h3><span class="dot dot-installed">●</span>PPA &amp; changelog aware</h3>
-          <p>Manage third-party repositories and read a package's changelog before upgrading it, without leaving the TUI.</p>
+          <h3><span class="dot dot-installed">●</span>Sources &amp; changelog aware</h3>
+          <p>Add or remove apt PPAs and flatpak remotes, and read a package's changelog before upgrading it, without leaving the TUI.</p>
         </div>
       </div>
     </section>
@@ -494,7 +494,7 @@
         <div class="feature-window">
           <div class="term-titlebar"><span>Disk cleanup explorer</span><span class="chip"><span class="k">K</span></span></div>
           <div class="feature-window-body">
-            <p>Old kernel packages apt's own autoremove deliberately leaves behind, leftover config files from already-removed packages, disabled snap revisions nobody ever revisits, Homebrew's cached downloads, inactive MacPorts versions — with total reclaimable space and a direct purge.</p>
+            <p>Old kernel packages apt's own autoremove deliberately leaves behind, leftover config files from already-removed packages, disabled snap revisions nobody ever revisits, Homebrew's cached downloads, inactive MacPorts versions, unused flatpak runtimes — with total reclaimable space and a direct purge.</p>
           </div>
         </div>
 
@@ -634,7 +634,7 @@ sudo mv pkgtui /usr/local/bin/</pre>
           <tr><td><kbd>c</kbd></td><td>Cycle the install channel (while confirming a snap install)</td></tr>
           <tr><td><kbd>H</kbd></td><td>Hold/unhold the selected package (apt, flatpak, brew)</td></tr>
           <tr><td><kbd>C</kbd></td><td>View the selected package's changelog (apt)</td></tr>
-          <tr><td><kbd>P</kbd></td><td>Manage third-party repositories / PPAs (apt)</td></tr>
+          <tr><td><kbd>P</kbd></td><td>Manage third-party sources: PPAs (apt), remotes (flatpak)</td></tr>
           <tr><td><kbd>s</kbd></td><td>Sync the cache (apt-get update, flatpak update --appstream, brew update, port selfupdate; no-op on snap)</td></tr>
           <tr><td><kbd>K</kbd></td><td>Disk cleanup: old kernels, leftover configs, disabled revisions</td></tr>
           <tr><td><kbd>W</kbd></td><td>Why is the selected package installed (manual vs. dependency, reverse-dep tree)</td></tr>
