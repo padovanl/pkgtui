@@ -84,6 +84,31 @@ nfpms:
       postinstall: ./scripts/deb/postinstall.sh
       postremove: ./scripts/deb/postremove.sh
 
+# What a macOS user actually expects: "brew install pkgtui", not a curl
+# and a tar. A cask rather than a formula because that's what Homebrew now
+# uses for a plain prebuilt binary — and because casks clear the Gatekeeper
+# quarantine attribute themselves, which an unsigned, un-notarized binary
+# otherwise trips over on first run.
+#
+# The tap lives in this same repo (Casks/ on main) instead of a separate
+# padovanl/homebrew-tap: that needs no second repository and no personal
+# access token, since the release workflow's own GITHUB_TOKEN can already
+# write here. The cost is one extra line for the user, who has to name the
+# repo when tapping it (Homebrew only infers the URL for repos called
+# homebrew-*). Moving to a dedicated tap later is a change of owner/name
+# below plus a token in the workflow.
+homebrew_casks:
+  - name: pkgtui
+    repository:
+      owner: padovanl
+      name: pkgtui
+      branch: main
+    directory: Casks
+    binaries: [pkgtui]
+    homepage: https://github.com/padovanl/pkgtui
+    description: htop-style terminal UI for apt, snap, flatpak, Homebrew and MacPorts packages
+    license: MIT
+
 checksum:
   name_template: "checksums.txt"
 

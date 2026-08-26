@@ -193,7 +193,24 @@ tar -xzf pkgtui_<version>_linux_amd64.tar.gz
 sudo mv pkgtui /usr/local/bin/
 ```
 
-### macOS (Apple Silicon or Intel)
+### Homebrew (macOS, and Linuxbrew)
+
+```bash
+brew tap padovanl/pkgtui https://github.com/padovanl/pkgtui
+brew install --cask pkgtui
+```
+
+Every release publishes a Homebrew cask, so `brew upgrade --cask pkgtui`
+keeps it current like anything else you installed with brew. The explicit
+URL in the `tap` line is needed because the tap lives in this repository
+rather than a separate `homebrew-pkgtui` one — Homebrew only infers the
+URL for repos named that way.
+
+The cask covers Apple Silicon, Intel Macs and Linuxbrew, and clears the
+Gatekeeper quarantine attribute itself, which matters because these
+binaries aren't notarized.
+
+### macOS without Homebrew
 
 Use `darwin_arm64` on Apple Silicon, `darwin_amd64` on Intel:
 
@@ -203,11 +220,10 @@ tar -xzf pkgtui_<version>_darwin_arm64.tar.gz
 sudo mv pkgtui /usr/local/bin/
 ```
 
-The binaries aren't notarized, so Gatekeeper quarantines anything
-downloaded with a browser. `curl` doesn't set the quarantine attribute, but
-if you grabbed the archive another way, clear it with
-`xattr -d com.apple.quarantine /usr/local/bin/pkgtui`. Building from source
-(below) sidesteps this entirely.
+`curl` doesn't set the quarantine attribute, so this works as is. If you
+grabbed the archive with a browser instead, clear it with
+`xattr -d com.apple.quarantine /usr/local/bin/pkgtui` — or just use the
+cask above, which handles it for you.
 
 ### From source
 

@@ -579,6 +579,7 @@
         <button class="install-tab" role="tab" aria-selected="true" data-target="tab-deb">.deb</button>
         <button class="install-tab" role="tab" aria-selected="false" data-target="tab-snap">.snap</button>
         <button class="install-tab" role="tab" aria-selected="false" data-target="tab-bin">binary</button>
+        <button class="install-tab" role="tab" aria-selected="false" data-target="tab-brew">brew</button>
         <button class="install-tab" role="tab" aria-selected="false" data-target="tab-mac">macOS</button>
         <button class="install-tab" role="tab" aria-selected="false" data-target="tab-src">from source</button>
       </div>
@@ -597,8 +598,13 @@ sudo snap install --dangerous --classic pkgtui_&lt;version&gt;_amd64.snap</pre>
 tar -xzf pkgtui_&lt;version&gt;_linux_amd64.tar.gz
 sudo mv pkgtui /usr/local/bin/</pre>
       </div>
+      <div id="tab-brew" class="install-panel">
+        <pre><span class="comment"># macOS (Apple Silicon or Intel) and Linuxbrew</span>
+brew tap padovanl/pkgtui https://github.com/padovanl/pkgtui
+brew install --cask pkgtui</pre>
+      </div>
       <div id="tab-mac" class="install-panel">
-        <pre><span class="comment"># darwin_arm64 on Apple Silicon, darwin_amd64 on Intel</span>
+        <pre><span class="comment"># without Homebrew: darwin_arm64 on Apple Silicon, darwin_amd64 on Intel</span>
 curl -fLO https://github.com/padovanl/pkgtui/releases/latest/download/pkgtui_&lt;version&gt;_darwin_arm64.tar.gz
 tar -xzf pkgtui_&lt;version&gt;_darwin_arm64.tar.gz
 sudo mv pkgtui /usr/local/bin/</pre>

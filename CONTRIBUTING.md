@@ -122,9 +122,17 @@ binaries and generate the `.deb` (via its built-in nfpm integration), and
 [snapcraft](https://snapcraft.io/docs/snapcraft-overview) for the `.snap`
 (see `snap/snapcraft.yaml`).
 
+Releasing also commits `Casks/pkgtui.rb` back to `main` (the Homebrew tap
+lives in this repo — see the `homebrew_casks` block in
+`.goreleaser.yaml`), using the workflow's own `GITHUB_TOKEN`. Branch
+protection that blocks direct pushes to `main` would fail that step *after*
+the binaries are already published, so if you ever add some, move the tap
+to a dedicated `homebrew-tap` repository and a PAT instead.
+
 ```bash
-# Local build + .deb, without publishing anything
+# Local build + .deb + generated cask, without publishing anything
 goreleaser release --snapshot --clean --skip=publish
+# ...then read dist/homebrew/Casks/pkgtui.rb to check what would be pushed
 
 # Local snap package
 snapcraft pack

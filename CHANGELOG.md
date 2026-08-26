@@ -25,6 +25,11 @@ follow [SemVer](https://semver.org/).
 - **macOS builds**: `darwin_amd64` and `darwin_arm64` archives are now part
   of a release, which with the three backends above makes pkgtui usable on
   Apple Silicon (see [#9](https://github.com/padovanl/pkgtui/issues/9)).
+- **Homebrew cask**: `brew tap padovanl/pkgtui https://github.com/padovanl/pkgtui`
+  then `brew install --cask pkgtui`. Every release commits an updated cask
+  to `Casks/` in this repository, so `brew upgrade` works from then on. The
+  cask also clears the Gatekeeper quarantine attribute, which these
+  un-notarized binaries would otherwise trip over on first run.
 
 ### Changed
 
