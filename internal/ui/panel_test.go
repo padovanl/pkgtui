@@ -586,3 +586,101 @@ func TestHelpScreenScrolls(t *testing.T) {
 		t.Error("down arrow did not scroll the help viewport (YOffset still 0)")
 	}
 }
+
+// fakeRepoManager wraps fakeManager with pkg.RepoManager, modelled on
+// flatpak's: it needs a name *and* a location, so a lone word is something
+// it can't build a command out of.
+type fakeRepoManager struct{ fakeManager }
+
+func (fakeRepoManager) RepoNoun() string      { return "remote" }
+func (fakeRepoManager) RepoInputHint() string { return "name https://example.org/repo" }
+
+func (fakeRepoManager) ListRepos() ([]pkg.Repo, error) {
+	return []pkg.Repo{{Name: "flathub", Description: "Flathub"}}, nil
+}
+
+func (fakeRepoManager) AddRepoCmd(spec string) []string {
+	f := strings.Fields(spec)
+	if len(f) != 2 {
+		return nil
+	}
+	return []string{"fake", "remote-add", f[0], f[1]}
+}
+
+func (fakeRepoManager) RemoveRepoCmd(repo pkg.Repo) []string {
+	return []string{"fake", "remote-delete", repo.Name}
+}
+
+// TestRepoScreenAddAsksConfirmation covers the whole add flow on a backend
+// whose repositories aren't apt PPAs: the screen labels them in that
+// backend's own words, and a usable spec ends in a confirmation carrying
+// the exact command.
+func TestRepoScreenAddAsksConfirmation(t *testing.T) {
+	p := NewPanel(fakeRepoManager{})
+	p.setSize(100, 30)
+
+	np, _ := p.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("P")})
+	p = np
+	if p.screen != screenRepos {
+		t.Fatalf("screen = %v, want screenRepos", p.screen)
+	}
+	p, _ = p.Update(p.loadReposCmd()())
+	if len(p.repos) != 1 {
+		t.Fatalf("repos = %v, want 1", p.repos)
+	}
+
+	p.repoAdding = true
+	p.repoInput.SetValue("flathub https://example.org/repo")
+	np, _ = p.handleRepoKey(tea.KeyMsg{Type: tea.KeyEnter})
+	p = np
+
+	if p.screen != screenConfirm || p.pending == nil {
+		t.Fatalf("screen = %v, pending = %v, want a pending add", p.screen, p.pending)
+	}
+	want := []string{"fake", "remote-add", "flathub", "https://example.org/repo"}
+	if !reflect.DeepEqual(p.pending.argv, want) {
+		t.Errorf("pending argv = %v, want %v", p.pending.argv, want)
+	}
+	if !strings.Contains(p.pending.label, "remote") {
+		t.Errorf("pending label = %q, want it to call this a remote", p.pending.label)
+	}
+}
+
+// An input the backend can't turn into a command must not reach the
+// confirmation screen with a nil argv: the panel repeats the backend's own
+// hint instead, which is what tells the user what shape was expected.
+func TestRepoScreenRejectsUnusableInput(t *testing.T) {
+	p := NewPanel(fakeRepoManager{})
+	p.setSize(100, 30)
+
+	np, _ := p.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("P")})
+	p = np
+	p.repoAdding = true
+	p.repoInput.SetValue("flathub") // no location: unusable for this backend
+
+	np, _ = p.handleRepoKey(tea.KeyMsg{Type: tea.KeyEnter})
+	p = np
+
+	if p.screen == screenConfirm {
+		t.Fatalf("screen = screenConfirm with pending %v, want to stay on the repository screen", p.pending)
+	}
+	if !strings.Contains(p.statusMsg, "https://example.org/repo") {
+		t.Errorf("statusMsg = %q, want the backend's input hint", p.statusMsg)
+	}
+}
+
+// A backend without pkg.RepoManager (snap) must not open the screen at all.
+func TestRepoScreenUnavailableWithoutRepoManager(t *testing.T) {
+	p := NewPanel(fakeManager{})
+	p.setSize(100, 30)
+
+	np, _ := p.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("P")})
+	p = np
+
+	if p.screen == screenRepos {
+		t.Fatal("screen = screenRepos, want the list screen with an explanation")
+	}
+	if p.statusMsg == "" {
+		t.Error("statusMsg is empty, want an explanation that this backend has no repositories")
+	}
+}

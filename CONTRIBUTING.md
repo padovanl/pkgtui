@@ -71,22 +71,41 @@ what's actually on screen at any given moment.
   says it.
 - No new abstractions/config knobs for a single call site; three similar
   lines beat a premature helper.
-- `internal/apt` and `internal/snap` keep command-execution (`exec.Command`)
-  separate from output parsing (plain functions taking a string, returning
-  parsed data) — see `parseUpgradableOutput` for the pattern. This is what
-  makes the parsers unit-testable without a real apt/snap on the test
-  machine; new parsing logic should follow the same split, with tests using
-  captured real command output as fixtures.
+- Every backend package (`internal/apt`, `internal/snap`,
+  `internal/flatpak`, `internal/homebrew`, `internal/macports`) keeps
+  command-execution (`exec.Command`) separate from output parsing (plain
+  functions taking a string, returning parsed data) — see
+  `parseUpgradableOutput` for the pattern. This is what makes the parsers
+  unit-testable without a real apt/brew/port on the test machine; new
+  parsing logic should follow the same split, with tests using captured
+  real command output as fixtures.
 
-## Adding a feature that only makes sense for one backend
+## Adding a feature that only makes sense for some backends
 
-apt and snap don't map onto each other 1:1 (autoremove, dependency trees and
-size accounting are apt-only; channels are snap-only). Rather than adding
-no-op methods to the other backend, we use small optional interfaces in
-`internal/pkg/pkg.go` (`OrphanLister`, `ChannelInstaller`, `BatchManager`)
-that a backend implements only if it applies, and the UI type-asserts for
-in `internal/ui/panel.go`. Follow that pattern for backend-specific
-features rather than growing the core `Manager` interface.
+The backends don't map onto each other 1:1 (changelogs and PPAs are
+apt-only; channels are snap-only; masking is flatpak's answer to a hold).
+Rather than adding no-op methods everywhere else, we use small optional
+interfaces in `internal/pkg/pkg.go` (`OrphanLister`, `ChannelInstaller`,
+`BatchManager`, `Holder`, `DiskAnalyzer`...) that a backend implements only
+if it applies, and the UI type-asserts for in `internal/ui/panel.go`.
+Follow that pattern for backend-specific features rather than growing the
+core `Manager` interface.
+
+## Adding a backend
+
+1. New package under `internal/<name>` implementing `pkg.Manager`, plus
+   whichever optional interfaces genuinely apply — with the
+   execution/parsing split described above, and a
+   `var _ pkg.Manager = (*Manager)(nil)` block at the bottom listing
+   everything it claims to implement.
+2. `Name()` is the tab label, the `Package.Source` value and the key the
+   config file remembers the last view under, so keep it short and stable.
+3. Add it to `knownBackends()` in `internal/ui/app.go`. Tabs are built from
+   the ones whose `Available()` says yes, so nothing else needs changing:
+   a machine without the tool simply doesn't get the tab.
+4. Only use `pkg.MaybeSudo` if the tool actually expects root. Homebrew
+   refuses to run as root and flatpak asks polkit itself; wrapping either
+   in `sudo` breaks them in ways that only show up on a real machine.
 
 ## Reporting bugs / requesting features
 
@@ -103,9 +122,17 @@ binaries and generate the `.deb` (via its built-in nfpm integration), and
 [snapcraft](https://snapcraft.io/docs/snapcraft-overview) for the `.snap`
 (see `snap/snapcraft.yaml`).
 
+Releasing also commits `Casks/pkgtui.rb` back to `main` (the Homebrew tap
+lives in this repo — see the `homebrew_casks` block in
+`.goreleaser.yaml`), using the workflow's own `GITHUB_TOKEN`. Branch
+protection that blocks direct pushes to `main` would fail that step *after*
+the binaries are already published, so if you ever add some, move the tap
+to a dedicated `homebrew-tap` repository and a PAT instead.
+
 ```bash
-# Local build + .deb, without publishing anything
+# Local build + .deb + generated cask, without publishing anything
 goreleaser release --snapshot --clean --skip=publish
+# ...then read dist/homebrew/Casks/pkgtui.rb to check what would be pushed
 
 # Local snap package
 snapcraft pack

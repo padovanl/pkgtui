@@ -1,6 +1,6 @@
 // Package pkg defines the shared types and interface implemented by each
-// package manager backend (apt, snap), so the UI layer can treat them
-// uniformly.
+// package manager backend (apt, snap, flatpak, homebrew, macports), so the
+// UI layer can treat them uniformly.
 package pkg
 
 import (
@@ -41,14 +41,15 @@ type Package struct {
 	Summary   string
 	Size      int64 // installed size in bytes, 0 if unknown
 	Status    Status
-	Source    string // "apt" or "snap"
+	Source    string // the backend's Name(), e.g. "apt" or "flatpak"
 	Held      bool   // upgrades blocked (apt-mark hold / snap refresh --hold)
 	Security  bool   // upgrade comes from a security repository/origin
 }
 
-// Manager is implemented by each backend (apt, snap).
+// Manager is implemented by each backend.
 type Manager interface {
-	// Name returns the backend identifier ("apt" or "snap").
+	// Name returns the backend identifier ("apt", "flatpak", ...), used as
+	// the tab label and as Package.Source.
 	Name() string
 
 	// Available reports whether the underlying tool exists on this system.
@@ -121,19 +122,35 @@ type Changelogger interface {
 	Changelog(name string) (string, error)
 }
 
-// PPA describes one third-party APT source.
-type PPA struct {
-	Name        string // e.g. "ppa:someone/something"
-	Description string
+// Repo describes one third-party package source: an apt PPA, a flatpak
+// remote.
+type Repo struct {
+	Name        string // e.g. "ppa:someone/something", or a flatpak remote's name
+	Description string // where it comes from, for the listing
 }
 
-// PPAManager is implemented by backends with a concept of addable
-// third-party repositories (apt's PPAs via add-apt-repository). Scoped to
-// apt; snap has no equivalent.
-type PPAManager interface {
-	ListPPAs() ([]PPA, error)
-	AddPPACmd(ppa string) []string
-	RemovePPACmd(ppa PPA) []string
+// RepoManager is implemented by backends with a concept of addable
+// third-party sources (apt's PPAs via add-apt-repository, flatpak's
+// remotes). snap has no equivalent, and neither Homebrew's taps nor
+// MacPorts' ports tree are the same thing: those replace where *all*
+// packages come from rather than adding one more source alongside the rest.
+//
+// What these are called, and what the user has to type to add one, differ
+// per backend, so the interface carries both instead of leaving the UI to
+// use apt's wording for everyone.
+type RepoManager interface {
+	// RepoNoun names one of these in this backend's own vocabulary,
+	// singular ("PPA", "remote"); the UI pluralizes by adding "s".
+	RepoNoun() string
+	// RepoInputHint is the placeholder for the add prompt, showing the
+	// exact shape AddRepoCmd expects.
+	RepoInputHint() string
+	ListRepos() ([]Repo, error)
+	// AddRepoCmd returns the argv adding spec, or nil when spec isn't in
+	// the form this backend needs — the UI then repeats RepoInputHint
+	// rather than asking to confirm a command that can't work.
+	AddRepoCmd(spec string) []string
+	RemoveRepoCmd(repo Repo) []string
 }
 
 // DiskItem is one reclaimable-space finding surfaced by the disk explorer:

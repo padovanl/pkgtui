@@ -4,6 +4,46 @@ All notable changes to this project are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
 follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Flatpak backend**: browse, search, install, remove and update flatpak
+  apps, including masking an app so `flatpak update` skips it (the `H`
+  hold/unhold key), managing remotes from the `P` screen, and an entry in
+  the disk cleanup explorer for runtimes no app needs any more. `s`
+  refreshes the appstream metadata `flatpak search` reads.
+- **Homebrew backend**: formulae and casks in one tab, with the orphaned
+  view (`brew autoremove`), pinning (`brew pin`), "why is this installed"
+  (`installed_on_request` plus `brew uses`), and a disk-cleanup entry for
+  what `brew cleanup` would reclaim. Sizes come from measuring the keg,
+  since brew reports none anywhere.
+- **MacPorts backend**: ports, the outdated list, leaves as the orphaned
+  view, the inactive port versions MacPorts keeps after every upgrade as
+  disk-cleanup findings, and "why is this installed" from the registry's
+  own requested flag plus `port dependents`.
+- **macOS builds**: `darwin_amd64` and `darwin_arm64` archives are now part
+  of a release, which with the three backends above makes pkgtui usable on
+  Apple Silicon (see [#9](https://github.com/padovanl/pkgtui/issues/9)).
+- **Homebrew cask**: `brew tap padovanl/pkgtui https://github.com/padovanl/pkgtui`
+  then `brew install --cask pkgtui`. Every release commits an updated cask
+  to `Casks/` in this repository, so `brew upgrade` works from then on. The
+  cask also clears the Gatekeeper quarantine attribute, which these
+  un-notarized binaries would otherwise trip over on first run.
+
+### Changed
+
+- The `P` screen manages **third-party sources generally**, not just apt
+  PPAs: flatpak remotes now use it too, each backend labelling them in its
+  own words. A rebound `P` key keeps working — the setting is still stored
+  under `ppa` in `config.json`.
+- Tabs are now **one per package manager actually present** on the system,
+  instead of a fixed apt and snap pair. A machine with none of them gets
+  all of them listed, each reporting that it isn't available.
+- The overlap view (`O`) spans **every** backend rather than just apt and
+  snap: it now reports any package installed through more than one of them,
+  with each backend's version.
+
 ## [1.5.0]
 
 ### Added

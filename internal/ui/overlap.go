@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -21,46 +22,60 @@ import (
 // channel, or the machine simply never runs `snap refresh`.
 const staleThresholdDays = 180
 
-// overlapEntry is a package name installed via both apt and snap.
-type overlapEntry struct {
-	name        string
-	aptVersion  string
-	snapVersion string
+// backendVersion is one backend's take on a package: which manager it came
+// from and what version that manager has installed.
+type backendVersion struct {
+	backend string
+	version string
 }
 
-// staleSnap is an installed snap whose current revision hasn't been
+// overlapEntry is a package name installed through more than one backend,
+// with every backend that has it.
+type overlapEntry struct {
+	name     string
+	installs []backendVersion
+}
+
+// staleEntry is an installed package whose current revision hasn't been
 // refreshed in at least staleThresholdDays.
-type staleSnap struct {
+type staleEntry struct {
+	backend     string
 	name        string
 	version     string
 	lastRefresh time.Time
 }
 
-// findDuplicates returns, sorted by name, every package installed via both
-// apt and snap. Canonical's own substitution of apt packages with snap
+// findDuplicates returns, sorted by name, every package installed through
+// more than one backend, each entry listing them in the given backend
+// order. Canonical's own substitution of apt packages with snap
 // "transitional" packages (Firefox, Chromium...) is exactly the kind of
-// overlap this surfaces -- something neither backend's own tooling has any
-// way to see across the other, since each only ever looks at itself.
-func findDuplicates(aptPkgs, snapPkgs []pkg.Package) []overlapEntry {
-	snapByName := make(map[string]pkg.Package, len(snapPkgs))
-	for _, p := range snapPkgs {
-		snapByName[p.Name] = p
+// overlap this surfaces -- and once flatpak and brew are in the picture too
+// it's no longer a two-way question: the same app can just as easily be
+// installed from apt and flatpak at once. No backend's own tooling can see
+// any of this, since each only ever looks at itself.
+func findDuplicates(byBackend map[string][]pkg.Package, order []string) []overlapEntry {
+	installs := map[string][]backendVersion{}
+	for _, backend := range order {
+		for _, p := range byBackend[backend] {
+			installs[p.Name] = append(installs[p.Name], backendVersion{backend: backend, version: p.Installed})
+		}
 	}
 	var out []overlapEntry
-	for _, a := range aptPkgs {
-		if s, ok := snapByName[a.Name]; ok {
-			out = append(out, overlapEntry{name: a.Name, aptVersion: a.Installed, snapVersion: s.Installed})
+	for name, versions := range installs {
+		if len(versions) < 2 {
+			continue
 		}
+		out = append(out, overlapEntry{name: name, installs: versions})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].name < out[j].name })
 	return out
 }
 
-// findStaleSnaps flags installed snaps whose current revision has sat
-// untouched longer than threshold, oldest first. Returns nil (not an error)
-// when staler is nil or its own calls fail -- staleness is a nice-to-know,
-// not something worth surfacing an error banner over.
-func findStaleSnaps(snapPkgs []pkg.Package, staler pkg.Staler, now time.Time, threshold time.Duration) []staleSnap {
+// findStale flags a backend's installed packages whose current revision has
+// sat untouched longer than threshold, oldest first. Returns nil (not an
+// error) when staler is nil or its own calls fail -- staleness is a
+// nice-to-know, not something worth surfacing an error banner over.
+func findStale(backend string, pkgs []pkg.Package, staler pkg.Staler, now time.Time, threshold time.Duration) []staleEntry {
 	if staler == nil {
 		return nil
 	}
@@ -68,8 +83,8 @@ func findStaleSnaps(snapPkgs []pkg.Package, staler pkg.Staler, now time.Time, th
 	if err != nil {
 		return nil
 	}
-	var out []staleSnap
-	for _, p := range snapPkgs {
+	var out []staleEntry
+	for _, p := range pkgs {
 		rev, ok := revisions[p.Name]
 		if !ok {
 			continue
@@ -79,7 +94,7 @@ func findStaleSnaps(snapPkgs []pkg.Package, staler pkg.Staler, now time.Time, th
 			continue
 		}
 		if now.Sub(t) >= threshold {
-			out = append(out, staleSnap{name: p.Name, version: p.Installed, lastRefresh: t})
+			out = append(out, staleEntry{backend: backend, name: p.Name, version: p.Installed, lastRefresh: t})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].lastRefresh.Before(out[j].lastRefresh) })
@@ -87,46 +102,63 @@ func findStaleSnaps(snapPkgs []pkg.Package, staler pkg.Staler, now time.Time, th
 }
 
 // overlapResultMsg carries the outcome of loadOverlapCmd back to the App.
-// Not a backendMsg: this spans both panels at once, so it's handled by the
+// Not a backendMsg: this spans every panel at once, so it's handled by the
 // root App directly instead of being routed to one Panel like everything
 // else.
 type overlapResultMsg struct {
 	duplicates []overlapEntry
-	stale      []staleSnap
+	stale      []staleEntry
 	err        error
 }
 
-// loadOverlapCmd fetches both backends' installed lists and computes the
-// duplicate/staleness view. aptMgr and snapMgr are passed explicitly rather
-// than read from App fields so the returned closure has no shared state
-// with the model it'll later be dispatched back into.
-func loadOverlapCmd(aptMgr, snapMgr pkg.Manager) tea.Cmd {
+// loadOverlapCmd fetches every backend's installed list and computes the
+// duplicate/staleness view. The managers are passed explicitly rather than
+// read from App fields so the returned closure has no shared state with the
+// model it'll later be dispatched back into.
+func loadOverlapCmd(mgrs []pkg.Manager) tea.Cmd {
 	return func() tea.Msg {
-		aptPkgs, aptErr := aptMgr.ListInstalled()
-		snapPkgs, snapErr := snapMgr.ListInstalled()
-		if aptErr != nil && snapErr != nil {
-			return overlapResultMsg{err: aptErr}
+		byBackend := map[string][]pkg.Package{}
+		order := make([]string, 0, len(mgrs))
+		var stale []staleEntry
+		var firstErr error
+		failed := 0
+		for _, mgr := range mgrs {
+			name := mgr.Name()
+			order = append(order, name)
+			pkgs, err := mgr.ListInstalled()
+			if err != nil {
+				failed++
+				if firstErr == nil {
+					firstErr = err
+				}
+				continue
+			}
+			byBackend[name] = pkgs
+			if staler, ok := mgr.(pkg.Staler); ok {
+				stale = append(stale, findStale(name, pkgs, staler, time.Now(), staleThresholdDays*24*time.Hour)...)
+			}
 		}
-		var staler pkg.Staler
-		if s, ok := snapMgr.(pkg.Staler); ok {
-			staler = s
+		// One backend failing is expected (a manager whose tool is
+		// installed but whose daemon isn't running, say); every one of them
+		// failing means there's nothing to compare and the error is the
+		// only thing worth showing.
+		if failed == len(mgrs) && firstErr != nil {
+			return overlapResultMsg{err: firstErr}
 		}
-		return overlapResultMsg{
-			duplicates: findDuplicates(aptPkgs, snapPkgs),
-			stale:      findStaleSnaps(snapPkgs, staler, time.Now(), staleThresholdDays*24*time.Hour),
-		}
+		sort.Slice(stale, func(i, j int) bool { return stale[i].lastRefresh.Before(stale[j].lastRefresh) })
+		return overlapResultMsg{duplicates: findDuplicates(byBackend, order), stale: stale}
 	}
 }
 
 // overlapScreen is a small app-wide overlay (like settingsScreen) showing
-// packages installed via both backends and snaps that have sat untouched
-// for a long time -- a view neither apt nor snap's own tooling can produce,
-// since each only ever looks at itself.
+// packages installed through more than one backend, plus packages that have
+// sat untouched for a long time -- a view no single backend's own tooling
+// can produce, since each only ever looks at itself.
 type overlapScreen struct {
 	loading    bool
 	err        error
 	duplicates []overlapEntry
-	stale      []staleSnap
+	stale      []staleEntry
 	cursor     int
 }
 
@@ -160,26 +192,30 @@ func (s *overlapScreen) row(idx int, text string, width int) string {
 
 func (s *overlapScreen) View(width, height int) string {
 	rows := []string{
-		titleStyle.Render(" apt + snap — overlap & staleness "),
+		titleStyle.Render(" Backend overlap & staleness "),
 		"",
-		helpSectionStyle.Render(fmt.Sprintf("Installed via both apt and snap (%d)", len(s.duplicates))),
+		helpSectionStyle.Render(fmt.Sprintf("Installed through more than one backend (%d)", len(s.duplicates))),
 	}
 	if len(s.duplicates) == 0 && !s.loading {
 		rows = append(rows, dimStyle.Render("  none found"))
 	}
 	idx := 0
 	for _, d := range s.duplicates {
-		rows = append(rows, s.row(idx, fmt.Sprintf("  %-30s apt %-16s snap %s", d.name, d.aptVersion, d.snapVersion), width))
+		var installs []string
+		for _, in := range d.installs {
+			installs = append(installs, in.backend+" "+in.version)
+		}
+		rows = append(rows, s.row(idx, fmt.Sprintf("  %-30s %s", d.name, strings.Join(installs, "   ")), width))
 		idx++
 	}
 
-	rows = append(rows, "", helpSectionStyle.Render(fmt.Sprintf("Snaps not refreshed in %d+ days (%d)", staleThresholdDays, len(s.stale))))
+	rows = append(rows, "", helpSectionStyle.Render(fmt.Sprintf("Not refreshed in %d+ days (%d)", staleThresholdDays, len(s.stale))))
 	if len(s.stale) == 0 && !s.loading {
 		rows = append(rows, dimStyle.Render("  none found"))
 	}
 	for _, st := range s.stale {
 		days := int(time.Since(st.lastRefresh).Hours() / 24)
-		rows = append(rows, s.row(idx, fmt.Sprintf("  %-30s %-16s last refreshed %d days ago", st.name, st.version, days), width))
+		rows = append(rows, s.row(idx, fmt.Sprintf("  %-10s %-30s %-16s last refreshed %d days ago", st.backend, st.name, st.version, days), width))
 		idx++
 	}
 

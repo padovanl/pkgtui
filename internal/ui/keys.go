@@ -26,7 +26,7 @@ type keyMap struct {
 	Channel     key.Binding
 	Hold        key.Binding
 	Changelog   key.Binding
-	PPA         key.Binding
+	Repos       key.Binding
 	Settings    key.Binding
 	Disk        key.Binding
 	Provenance  key.Binding
@@ -42,8 +42,8 @@ var keys = keyMap{
 	Up:          key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
 	Down:        key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
 	Tab:         key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "view")),
-	NextBackend: key.NewBinding(key.WithKeys("right", "l"), key.WithHelp("→", "apt/snap")),
-	PrevBackend: key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("←", "apt/snap")),
+	NextBackend: key.NewBinding(key.WithKeys("right", "l"), key.WithHelp("→", "backend")),
+	PrevBackend: key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("←", "backend")),
 	Search:      key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
 	Filter:      key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "filter list")),
 	Enter:       key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "details")),
@@ -62,12 +62,12 @@ var keys = keyMap{
 	Channel:     key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "channel")),
 	Hold:        key.NewBinding(key.WithKeys("H"), key.WithHelp("H", "hold/unhold")),
 	Changelog:   key.NewBinding(key.WithKeys("C"), key.WithHelp("C", "changelog")),
-	PPA:         key.NewBinding(key.WithKeys("P"), key.WithHelp("P", "PPAs")),
+	Repos:       key.NewBinding(key.WithKeys("P"), key.WithHelp("P", "repositories")),
 	Settings:    key.NewBinding(key.WithKeys(","), key.WithHelp(",", "settings")),
 	Disk:        key.NewBinding(key.WithKeys("K"), key.WithHelp("K", "disk cleanup")),
 	Provenance:  key.NewBinding(key.WithKeys("W"), key.WithHelp("W", "why installed")),
 	Unattended:  key.NewBinding(key.WithKeys("A"), key.WithHelp("A", "auto-upgrades")),
-	Overlap:     key.NewBinding(key.WithKeys("O"), key.WithHelp("O", "apt+snap overlap")),
+	Overlap:     key.NewBinding(key.WithKeys("O"), key.WithHelp("O", "backend overlap")),
 	Version:     key.NewBinding(key.WithKeys("V"), key.WithHelp("V", "install a version / revert")),
 	Metrics:     key.NewBinding(key.WithKeys("M"), key.WithHelp("M", "metrics dashboard")),
 	Conflicts:   key.NewBinding(key.WithKeys("X"), key.WithHelp("X", "upgrade conflicts")),
@@ -105,7 +105,11 @@ func rebindableKeys() []bindingEntry {
 		{"sync", "Sync cache", &keys.Sync},
 		{"channel", "Cycle install channel", &keys.Channel},
 		{"changelog", "View changelog", &keys.Changelog},
-		{"ppa", "Manage PPAs", &keys.PPA},
+		// Still called "ppa" on disk, even though the screen now covers
+		// flatpak remotes too: it's the key a rebind is stored under in
+		// config.json, and renaming it would silently drop anyone's
+		// existing rebinding of P.
+		{"ppa", "Manage third-party repositories", &keys.Repos},
 		{"settings", "Open settings", &keys.Settings},
 		{"help", "Help", &keys.Help},
 		{"quit", "Quit", &keys.Quit},
@@ -116,7 +120,7 @@ func rebindableKeys() []bindingEntry {
 		{"disk", "Disk cleanup explorer", &keys.Disk},
 		{"provenance", "Why is this installed", &keys.Provenance},
 		{"unattended", "Unattended-upgrades status", &keys.Unattended},
-		{"overlap", "apt+snap overlap view", &keys.Overlap},
+		{"overlap", "Backend overlap view", &keys.Overlap},
 		{"version", "Install a specific version / revert", &keys.Version},
 		{"metrics", "Metrics dashboard", &keys.Metrics},
 		{"conflicts", "Upgrade conflicts", &keys.Conflicts},

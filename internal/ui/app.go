@@ -1,6 +1,7 @@
-// Package ui implements the Bubble Tea application: two tabs (APT and
-// SNAP), each backed by a Panel that can browse installed/upgradable
-// packages, search, view details and run install/remove/upgrade actions.
+// Package ui implements the Bubble Tea application: one tab per package
+// manager present on the system, each backed by a Panel that can browse
+// installed/upgradable packages, search, view details and run
+// install/remove/upgrade actions.
 package ui
 
 import (
@@ -9,6 +10,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/padovanl/pkgtui/internal/apt"
 	"github.com/padovanl/pkgtui/internal/config"
+	"github.com/padovanl/pkgtui/internal/flatpak"
+	"github.com/padovanl/pkgtui/internal/homebrew"
+	"github.com/padovanl/pkgtui/internal/macports"
+	"github.com/padovanl/pkgtui/internal/pkg"
 	"github.com/padovanl/pkgtui/internal/snap"
 )
 
@@ -17,10 +22,39 @@ type App struct {
 	active int
 
 	settings *settingsScreen // nil unless the settings overlay is open
-	overlap  *overlapScreen  // nil unless the apt+snap overlap overlay is open
+	overlap  *overlapScreen  // nil unless the cross-backend overlap overlay is open
 
 	width, height int
 }
+
+// knownBackends lists every package manager pkgtui can drive, in tab order:
+// the Linux system managers first, then the ones that sit on top of a
+// system (flatpak) or come from outside it entirely (brew, macports).
+func knownBackends() []pkg.Manager {
+	return []pkg.Manager{apt.New(), snap.New(), flatpak.New(), homebrew.New(), macports.New()}
+}
+
+// filterAvailable keeps only the managers whose tool actually exists here,
+// so a Fedora box doesn't carry an apt tab it can never fill and a Mac
+// doesn't carry three of them. When nothing at all is available, every
+// backend is kept instead: each panel then says so in its own words, which
+// is more use than a window with no tabs in it — and on macOS, which is
+// exactly where a fresh install finds no package manager it knows, the tabs
+// double as the list of what to install to get started.
+func filterAvailable(all []pkg.Manager) []pkg.Manager {
+	var available []pkg.Manager
+	for _, m := range all {
+		if m.Available() {
+			available = append(available, m)
+		}
+	}
+	if len(available) == 0 {
+		return all
+	}
+	return available
+}
+
+func activeBackends() []pkg.Manager { return filterAvailable(knownBackends()) }
 
 func NewApp() *App {
 	cfg, _ := config.Load()
@@ -31,20 +65,28 @@ func NewApp() *App {
 		ApplyKeybindingOverrides(cfg.Keybindings)
 	}
 
-	aptPanel := NewPanel(apt.New())
-	snapPanel := NewPanel(snap.New())
-	if v, ok := cfg.LastView["apt"]; ok {
-		aptPanel.SetInitialMode(v)
-	}
-	if v, ok := cfg.LastView["snap"]; ok {
-		snapPanel.SetInitialMode(v)
-	}
-
-	a := &App{panels: []*Panel{aptPanel, snapPanel}}
-	if cfg.LastBackend == "snap" {
-		a.active = 1
+	a := &App{}
+	for _, mgr := range activeBackends() {
+		p := NewPanel(mgr)
+		if v, ok := cfg.LastView[mgr.Name()]; ok {
+			p.SetInitialMode(v)
+		}
+		if mgr.Name() == cfg.LastBackend {
+			a.active = len(a.panels)
+		}
+		a.panels = append(a.panels, p)
 	}
 	return a
+}
+
+// managers returns every panel's backend, for the app-wide views that span
+// all of them at once rather than belonging to any single panel.
+func (a *App) managers() []pkg.Manager {
+	mgrs := make([]pkg.Manager, 0, len(a.panels))
+	for _, p := range a.panels {
+		mgrs = append(mgrs, p.mgr)
+	}
+	return mgrs
 }
 
 func (a *App) Init() tea.Cmd {
@@ -136,7 +178,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		case key.Matches(msg, keys.Overlap) && !a.activePanel().IsTyping():
 			a.overlap = newOverlapScreen()
-			return a, loadOverlapCmd(a.panels[0].mgr, a.panels[1].mgr)
+			return a, loadOverlapCmd(a.managers())
 		case key.Matches(msg, keys.NextBackend) && !a.activePanel().IsTyping():
 			a.active = (a.active + 1) % len(a.panels)
 			return a, nil
@@ -271,7 +313,7 @@ func (a *App) View() string {
 		return lipgloss.JoinVertical(lipgloss.Left,
 			a.renderTabBar(),
 			a.overlap.View(a.width, a.height-3),
-			footerBarStyle.Width(a.width).Render(dimStyle.Render("apt+snap overlap")),
+			footerBarStyle.Width(a.width).Render(dimStyle.Render("backend overlap")),
 		)
 	}
 	body := a.activePanel().View()

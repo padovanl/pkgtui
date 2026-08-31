@@ -45,7 +45,7 @@ const (
 	screenConfirm
 	screenHelp
 	screenChangelog
-	screenPPA
+	screenRepos
 	screenRunning
 	screenDisk
 	screenProvenance
@@ -136,13 +136,13 @@ type changelogResultMsg struct {
 
 func (m changelogResultMsg) Backend() string { return m.backend }
 
-type ppaListResultMsg struct {
+type repoListResultMsg struct {
 	backend string
-	ppas    []pkg.PPA
+	repos   []pkg.Repo
 	err     error
 }
 
-func (m ppaListResultMsg) Backend() string { return m.backend }
+func (m repoListResultMsg) Backend() string { return m.backend }
 
 type diskReportResultMsg struct {
 	backend string
@@ -203,7 +203,7 @@ type Panel struct {
 	chanInstaller      pkg.ChannelInstaller
 	holder             pkg.Holder
 	changelogger       pkg.Changelogger
-	ppaManager         pkg.PPAManager
+	repoManager        pkg.RepoManager
 	diskAnalyzer       pkg.DiskAnalyzer
 	provenanceProvider pkg.ProvenanceProvider
 	uaReporter         pkg.UnattendedUpgradesReporter
@@ -237,11 +237,11 @@ type Panel struct {
 	orphanedCount      int // -1 = not yet known
 	startupBannerShown bool
 
-	// PPA screen (apt only).
-	ppas      []pkg.PPA
-	ppaCursor int
-	ppaAdding bool
-	ppaInput  textinput.Model
+	// Third-party repository screen (apt PPAs, flatpak remotes).
+	repos      []pkg.Repo
+	repoCursor int
+	repoAdding bool
+	repoInput  textinput.Model
 
 	// Disk cleanup screen.
 	diskItems  []pkg.DiskItem
@@ -303,10 +303,12 @@ func NewPanel(mgr pkg.Manager) *Panel {
 	ti.CharLimit = 100
 	ti.Prompt = "🔍 "
 
-	ppaInput := textinput.New()
-	ppaInput.Placeholder = "ppa:user/name"
-	ppaInput.CharLimit = 100
-	ppaInput.Prompt = "➕ "
+	repoInput := textinput.New()
+	// Overwritten in NewPanel with the backend's own hint, once we know
+	// which backend this panel drives.
+	repoInput.Placeholder = "ppa:user/name"
+	repoInput.CharLimit = 100
+	repoInput.Prompt = "➕ "
 
 	vp := viewport.New(0, 0)
 
@@ -324,7 +326,7 @@ func NewPanel(mgr pkg.Manager) *Panel {
 		screen:          screenList,
 		upgradableCount: -1,
 		orphanedCount:   -1,
-		ppaInput:        ppaInput,
+		repoInput:       repoInput,
 	}
 	if ol, ok := mgr.(pkg.OrphanLister); ok {
 		p.orphanLister = ol
@@ -341,8 +343,9 @@ func NewPanel(mgr pkg.Manager) *Panel {
 	if cl, ok := mgr.(pkg.Changelogger); ok {
 		p.changelogger = cl
 	}
-	if pm, ok := mgr.(pkg.PPAManager); ok {
-		p.ppaManager = pm
+	if rm, ok := mgr.(pkg.RepoManager); ok {
+		p.repoManager = rm
+		p.repoInput.Placeholder = rm.RepoInputHint()
 	}
 	if da, ok := mgr.(pkg.DiskAnalyzer); ok {
 		p.diskAnalyzer = da
@@ -471,12 +474,12 @@ func (p *Panel) changelogCmd(name string) tea.Cmd {
 	}
 }
 
-func (p *Panel) loadPPAsCmd() tea.Cmd {
+func (p *Panel) loadReposCmd() tea.Cmd {
 	mgr := p.mgr
-	pm := p.ppaManager
+	pm := p.repoManager
 	return func() tea.Msg {
-		ppas, err := pm.ListPPAs()
-		return ppaListResultMsg{backend: mgr.Name(), ppas: ppas, err: err}
+		repos, err := pm.ListRepos()
+		return repoListResultMsg{backend: mgr.Name(), repos: repos, err: err}
 	}
 }
 
@@ -699,13 +702,13 @@ func (p *Panel) Update(msg tea.Msg) (*Panel, tea.Cmd) {
 		p.viewport.GotoTop()
 		p.screen = screenChangelog
 		return p, nil
-	case ppaListResultMsg:
+	case repoListResultMsg:
 		p.loading = false
 		p.err = msg.err
 		if msg.err == nil {
-			p.ppas = msg.ppas
-			if p.ppaCursor >= len(p.ppas) {
-				p.ppaCursor = maxInt(len(p.ppas)-1, 0)
+			p.repos = msg.repos
+			if p.repoCursor >= len(p.repos) {
+				p.repoCursor = maxInt(len(p.repos)-1, 0)
 			}
 		}
 		return p, nil
@@ -854,18 +857,18 @@ func (p *Panel) handleMouse(msg tea.MouseMsg) (*Panel, tea.Cmd) {
 		}
 		return p, nil
 	}
-	if p.screen == screenPPA {
+	if p.screen == screenRepos {
 		if msg.Action != tea.MouseActionPress {
 			return p, nil
 		}
 		switch msg.Button {
 		case tea.MouseButtonWheelUp:
-			if p.ppaCursor > 0 {
-				p.ppaCursor--
+			if p.repoCursor > 0 {
+				p.repoCursor--
 			}
 		case tea.MouseButtonWheelDown:
-			if p.ppaCursor < len(p.ppas)-1 {
-				p.ppaCursor++
+			if p.repoCursor < len(p.repos)-1 {
+				p.repoCursor++
 			}
 		}
 		return p, nil
@@ -973,8 +976,8 @@ func (p *Panel) handleKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
 		return p, cmd
 	}
 
-	if p.screen == screenPPA {
-		return p.handlePPAKey(msg)
+	if p.screen == screenRepos {
+		return p.handleRepoKey(msg)
 	}
 
 	if p.screen == screenDisk {
@@ -1084,8 +1087,8 @@ func (p *Panel) handleKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
 		return p.startHold()
 	case key.Matches(msg, keys.Changelog):
 		return p.openChangelog()
-	case key.Matches(msg, keys.PPA):
-		return p.openPPAScreen()
+	case key.Matches(msg, keys.Repos):
+		return p.openRepoScreen()
 	case key.Matches(msg, keys.Disk):
 		return p.openDiskScreen()
 	case key.Matches(msg, keys.Provenance):
@@ -1107,22 +1110,22 @@ func (p *Panel) handleKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
 	return p, cmd
 }
 
-// handlePPAKey drives the PPA management screen: browsing the current list
+// handleRepoKey drives the repository management screen: browsing the list
 // (up/down, "a" to add, "d"/"r" to remove, esc to leave) or, while adding,
-// typing the new PPA name.
-func (p *Panel) handlePPAKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
-	if p.ppaAdding {
+// typing a new repository to add.
+func (p *Panel) handleRepoKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
+	if p.repoAdding {
 		switch msg.Type {
 		case tea.KeyEnter:
-			return p.startAddPPA()
+			return p.startAddRepo()
 		case tea.KeyEsc:
-			p.ppaAdding = false
-			p.ppaInput.Blur()
-			p.ppaInput.SetValue("")
+			p.repoAdding = false
+			p.repoInput.Blur()
+			p.repoInput.SetValue("")
 			return p, nil
 		}
 		var cmd tea.Cmd
-		p.ppaInput, cmd = p.ppaInput.Update(msg)
+		p.repoInput, cmd = p.repoInput.Update(msg)
 		return p, cmd
 	}
 
@@ -1130,19 +1133,19 @@ func (p *Panel) handlePPAKey(msg tea.KeyMsg) (*Panel, tea.Cmd) {
 	case key.Matches(msg, keys.Escape):
 		p.screen = screenList
 	case key.Matches(msg, keys.Up):
-		if p.ppaCursor > 0 {
-			p.ppaCursor--
+		if p.repoCursor > 0 {
+			p.repoCursor--
 		}
 	case key.Matches(msg, keys.Down):
-		if p.ppaCursor < len(p.ppas)-1 {
-			p.ppaCursor++
+		if p.repoCursor < len(p.repos)-1 {
+			p.repoCursor++
 		}
 	case msg.String() == "a":
-		p.ppaAdding = true
-		p.ppaInput.Focus()
+		p.repoAdding = true
+		p.repoInput.Focus()
 		return p, textinput.Blink
 	case key.Matches(msg, keys.Remove):
-		return p.startRemovePPA()
+		return p.startRemoveRepo()
 	}
 	return p, nil
 }
@@ -1485,37 +1488,45 @@ func (p *Panel) openChangelog() (*Panel, tea.Cmd) {
 	return p, tea.Batch(p.changelogCmd(sel.Name), p.spinner.Tick)
 }
 
-func (p *Panel) openPPAScreen() (*Panel, tea.Cmd) {
-	if p.ppaManager == nil {
-		p.statusMsg = fmt.Sprintf("PPA management isn't available for %s.", p.mgr.Name())
+func (p *Panel) openRepoScreen() (*Panel, tea.Cmd) {
+	if p.repoManager == nil {
+		p.statusMsg = fmt.Sprintf("Repository management isn't available for %s.", p.mgr.Name())
 		return p, nil
 	}
-	p.screen = screenPPA
+	p.screen = screenRepos
 	p.loading = true
 	p.statusMsg = ""
-	return p, tea.Batch(p.loadPPAsCmd(), p.spinner.Tick)
+	return p, tea.Batch(p.loadReposCmd(), p.spinner.Tick)
 }
 
-func (p *Panel) startAddPPA() (*Panel, tea.Cmd) {
-	name := strings.TrimSpace(p.ppaInput.Value())
-	p.ppaInput.SetValue("")
-	p.ppaInput.Blur()
-	p.ppaAdding = false
+func (p *Panel) startAddRepo() (*Panel, tea.Cmd) {
+	name := strings.TrimSpace(p.repoInput.Value())
+	p.repoInput.SetValue("")
+	p.repoInput.Blur()
+	p.repoAdding = false
 	if name == "" {
 		return p, nil
 	}
-	p.pending = &pendingAction{label: fmt.Sprintf("Add repository %s?\nThis runs add-apt-repository with root privileges.", name), argv: p.ppaManager.AddPPACmd(name)}
+	argv := p.repoManager.AddRepoCmd(name)
+	if argv == nil {
+		// The backend can't make a command out of what was typed (flatpak
+		// needs a name *and* a location, for instance). Repeating its own
+		// hint says more than "invalid input" would.
+		p.statusMsg = fmt.Sprintf("Expected: %s", p.repoManager.RepoInputHint())
+		return p, nil
+	}
+	p.pending = &pendingAction{label: fmt.Sprintf("Add %s %s?\nThis runs: %s", p.repoManager.RepoNoun(), name, strings.Join(argv, " ")), argv: argv}
 	p.returnScreen = p.screen
 	p.screen = screenConfirm
 	return p, nil
 }
 
-func (p *Panel) startRemovePPA() (*Panel, tea.Cmd) {
-	if p.ppaCursor < 0 || p.ppaCursor >= len(p.ppas) {
+func (p *Panel) startRemoveRepo() (*Panel, tea.Cmd) {
+	if p.repoCursor < 0 || p.repoCursor >= len(p.repos) {
 		return p, nil
 	}
-	target := p.ppas[p.ppaCursor]
-	p.pending = &pendingAction{label: fmt.Sprintf("Remove repository %s?", target.Name), argv: p.ppaManager.RemovePPACmd(target)}
+	target := p.repos[p.repoCursor]
+	p.pending = &pendingAction{label: fmt.Sprintf("Remove %s %s?", p.repoManager.RepoNoun(), target.Name), argv: p.repoManager.RemoveRepoCmd(target)}
 	p.returnScreen = p.screen
 	p.screen = screenConfirm
 	return p, nil
@@ -1700,7 +1711,7 @@ func (p *Panel) executeConfirmedAction() (*Panel, tea.Cmd) {
 }
 
 // dismissRunning leaves the live-output screen after the command has
-// finished, refreshing whatever list/PPA view we came from.
+// finished, refreshing whatever list/repository view we came from.
 func (p *Panel) dismissRunning() (*Panel, tea.Cmd) {
 	exitErr := p.running.exitErr
 	logAction(p.running.backend, p.running.argv, exitErr)
@@ -1715,9 +1726,9 @@ func (p *Panel) dismissRunning() (*Panel, tea.Cmd) {
 		p.statusMsg = "Done."
 	}
 	p.loading = true
-	if p.returnScreen == screenPPA {
-		p.screen = screenPPA
-		return p, tea.Batch(p.loadPPAsCmd(), p.spinner.Tick)
+	if p.returnScreen == screenRepos {
+		p.screen = screenRepos
+		return p, tea.Batch(p.loadReposCmd(), p.spinner.Tick)
 	}
 	if p.returnScreen == screenDisk {
 		p.screen = screenDisk
@@ -1769,8 +1780,8 @@ func (p *Panel) View() string {
 		return p.renderHelp()
 	}
 
-	if p.screen == screenPPA {
-		return p.renderPPA()
+	if p.screen == screenRepos {
+		return p.renderRepos()
 	}
 
 	if p.screen == screenDisk {
@@ -1849,25 +1860,29 @@ func (p *Panel) View() string {
 	return content
 }
 
-func (p *Panel) renderPPA() string {
+func (p *Panel) renderRepos() string {
 	var sections []string
-	sections = append(sections, titleStyle.Render(fmt.Sprintf(" %s — Third-party repositories (PPAs) (%d) ", strings.ToUpper(p.mgr.Name()), len(p.ppas))))
-	sections = append(sections, warnBannerStyle.Width(maxInt(p.width, 10)).Render(
-		"⚠ Careful: adding/removing repositories can break `apt update` or replace system packages. Know what you're adding."))
-
-	if len(p.ppas) == 0 && !p.loading {
-		sections = append(sections, dimStyle.Render("No third-party PPAs found in /etc/apt/sources.list.d."))
+	noun := "repository"
+	if p.repoManager != nil {
+		noun = p.repoManager.RepoNoun()
 	}
-	for i, ppa := range p.ppas {
-		line := fmt.Sprintf("%s  %s", ppa.Name, dimStyle.Render(ppa.Description))
-		if i == p.ppaCursor {
-			line = lipgloss.NewStyle().Background(lipgloss.Color("237")).Foreground(colorFg).Bold(true).Width(p.width - 2).Render(fmt.Sprintf("%s  %s", ppa.Name, ppa.Description))
+	sections = append(sections, titleStyle.Render(fmt.Sprintf(" %s — Third-party %ss (%d) ", strings.ToUpper(p.mgr.Name()), noun, len(p.repos))))
+	sections = append(sections, warnBannerStyle.Width(maxInt(p.width, 10)).Render(
+		"⚠ Careful: adding or removing a source can break updates or replace packages you already have. Know what you're adding."))
+
+	if len(p.repos) == 0 && !p.loading {
+		sections = append(sections, dimStyle.Render(fmt.Sprintf("No third-party %ss configured.", noun)))
+	}
+	for i, repo := range p.repos {
+		line := fmt.Sprintf("%s  %s", repo.Name, dimStyle.Render(repo.Description))
+		if i == p.repoCursor {
+			line = lipgloss.NewStyle().Background(lipgloss.Color("237")).Foreground(colorFg).Bold(true).Width(p.width - 2).Render(fmt.Sprintf("%s  %s", repo.Name, repo.Description))
 		}
 		sections = append(sections, line)
 	}
 
-	if p.ppaAdding {
-		sections = append(sections, searchBoxStyle.Width(maxInt(p.width-4, 10)).Render(p.ppaInput.View()))
+	if p.repoAdding {
+		sections = append(sections, searchBoxStyle.Width(maxInt(p.width-4, 10)).Render(p.repoInput.View()))
 	}
 
 	var status string
@@ -2144,10 +2159,10 @@ func (p *Panel) helpContent() string {
 
 	rows := []string{
 		helpSectionStyle.Render("Navigation"),
-		row("← / →", "switch backend (apt / snap)"),
+		row("← / →", "switch backend (one tab per package manager found)"),
 		row("tab", "switch view (Installed / Upgradable"+p.orphanedTabLabel()+" / Search)"),
 		row("↑/↓, j/k", "move selection"),
-		row("/", "search the full apt/snap catalog, then enter to run it"),
+		row("/", "search the backend's full catalog, then enter to run it"),
 		row("f", "filter the packages currently shown, as you type"),
 		row("enter", "package details"),
 		row("esc", "back / cancel filter"),
@@ -2159,7 +2174,7 @@ func (p *Panel) helpContent() string {
 		row("u", "upgrade selected package"),
 		row("U", "upgrade ALL packages (shows what will change first)"),
 		row("S", "sort the current view by installed size"),
-		row("s", "sync package cache (apt only)"),
+		row("s", "sync package cache (backends that have one)"),
 		row("y / n", "confirm / cancel a pending action"),
 	}
 	if p.chanInstaller != nil {
@@ -2171,8 +2186,8 @@ func (p *Panel) helpContent() string {
 	if p.changelogger != nil {
 		rows = append(rows, row("C", "view the selected package's changelog"))
 	}
-	if p.ppaManager != nil {
-		rows = append(rows, row("P", "manage third-party repositories (PPAs)"))
+	if p.repoManager != nil {
+		rows = append(rows, row("P", fmt.Sprintf("manage third-party %ss", p.repoManager.RepoNoun())))
 	}
 	if p.diskAnalyzer != nil {
 		rows = append(rows, row("K", "disk cleanup: old kernels, leftover configs, disabled revisions"))
@@ -2199,7 +2214,7 @@ func (p *Panel) helpContent() string {
 		helpSectionStyle.Render("Status symbols"),
 		"  "+legendLine(),
 		"",
-		row("O", "apt+snap overlap: duplicate installs, stale snaps"),
+		row("O", "backend overlap: packages installed more than once, stale installs"),
 		row(",", "settings (theme, keybindings)"),
 		row("ctrl+l", "force a full screen redraw"),
 		row("q", "quit"),
