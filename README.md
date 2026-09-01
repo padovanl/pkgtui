@@ -219,19 +219,19 @@ after that:
    *"pkgtui" Not Opened* since the binary isn't notarized — click
    **Done** (not Move to Bin), it's already on your `PATH`.
 
-   <img src="https://raw.githubusercontent.com/padovanl/pkgtui/main/assets/macos-first-run/01-not-opened.png" alt="macOS dialog reading pkgtui Not Opened, with Done and Move to Bin buttons" width="420">
+   <img src="https://raw.githubusercontent.com/padovanl/pkgtui/main/assets/macos-first-run/01-not-opened.png" alt="macOS dialog reading pkgtui Not Opened, with Done and Move to Bin buttons" width="260">
 
 2. Open **System Settings → Privacy & Security**, scroll down to the
    note that *"pkgtui" was blocked to protect your Mac*, and click
    **Allow Anyway**.
 
-   <img src="https://raw.githubusercontent.com/padovanl/pkgtui/main/assets/macos-first-run/02-allow-anyway.png" alt="macOS Privacy and Security settings showing pkgtui was blocked, with an Allow Anyway button" width="420">
+   <img src="https://raw.githubusercontent.com/padovanl/pkgtui/main/assets/macos-first-run/02-allow-anyway.png" alt="macOS Privacy and Security settings showing pkgtui was blocked, with an Allow Anyway button" width="260">
 
 3. Open a terminal and run `pkgtui` again — an *Open "pkgtui"?* prompt
    appears, click **Open Anyway**, then enter your password when asked.
    `pkgtui` starts normally from then on.
 
-   <img src="https://raw.githubusercontent.com/padovanl/pkgtui/main/assets/macos-first-run/03-open-anyway.png" alt="macOS dialog asking Open pkgtui, with Move to Bin, Open Anyway and Done buttons" width="420">
+   <img src="https://raw.githubusercontent.com/padovanl/pkgtui/main/assets/macos-first-run/03-open-anyway.png" alt="macOS dialog asking Open pkgtui, with Move to Bin, Open Anyway and Done buttons" width="260">
 
 (Thanks to [@Sk8teb0arder](https://github.com/Sk8teb0arder) for walking
 through this and sharing the screenshots.)
