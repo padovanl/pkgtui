@@ -4,7 +4,7 @@ All notable changes to this project are documented here. Format loosely
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions
 follow [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [1.8.1]
 
 ### Added
 
@@ -42,6 +42,12 @@ follow [SemVer](https://semver.org/).
 
 ### Changed
 
+- **Homebrew install docs** (README and the landing page's `brew` tab)
+  now walk through the one-time Gatekeeper approval macOS still requires
+  on first launch (the cask clears the quarantine attribute, but the
+  binary is unsigned) — screenshots and steps courtesy of
+  [@Sk8teb0arder](https://github.com/Sk8teb0arder) (see
+  [#9](https://github.com/padovanl/pkgtui/issues/9)).
 - The `P` screen manages **third-party sources generally**, not just apt
   PPAs: flatpak remotes now use it too, each backend labelling them in its
   own words. A rebound `P` key keeps working — the setting is still stored
