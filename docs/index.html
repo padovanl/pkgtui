@@ -544,7 +544,7 @@
         <div class="feature-window">
           <div class="term-titlebar"><span>Upgrade conflicts</span><span class="chip"><span class="k">X</span></span></div>
           <div class="feature-window-body">
-            <p>Packages a conservative apt-get upgrade would leave behind because it needs to install or remove something else first — distinct from an explicit hold. "Upgrade all" already resolves most of these; this shows which, and why.</p>
+            <p>Packages a conservative apt-get upgrade would leave behind because it needs to install or remove something else first — distinct from an explicit hold. "Upgrade all" already resolves most of these; this shows which, and why. Also catches packages Ubuntu's phased update rollout is holding back, which neither a plain upgrade nor "Upgrade all" will touch until the rollout reaches this machine.</p>
           </div>
         </div>
 
@@ -649,7 +649,7 @@ sudo mv pkgtui /usr/local/bin/</pre>
           <tr><td><kbd>O</kbd></td><td>Backend overlap: packages installed more than once, stale snaps</td></tr>
           <tr><td><kbd>V</kbd></td><td>Install a specific version / downgrade (apt); revert (snap)</td></tr>
           <tr><td><kbd>M</kbd></td><td>Metrics dashboard: installed packages ranked by disk usage</td></tr>
-          <tr><td><kbd>X</kbd></td><td>Upgrade conflicts: packages a plain upgrade would keep back (apt)</td></tr>
+          <tr><td><kbd>X</kbd></td><td>Upgrade conflicts: packages a plain upgrade would keep back, or Ubuntu's phased rollout is holding back (apt)</td></tr>
           <tr><td><kbd>L</kbd></td><td>Action log: what's run this session, and whether it succeeded</td></tr>
           <tr><td><kbd>y</kbd> / <kbd>n</kbd></td><td>Confirm / cancel a pending action</td></tr>
           <tr><td><kbd>esc</kbd></td><td>Go back</td></tr>

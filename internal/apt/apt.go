@@ -287,14 +287,11 @@ func (m *Manager) InstallVersionCmd(name, version string) []string {
 	return pkg.MaybeSudo([]string{"apt-get", "install", "-y", name + "=" + version})
 }
 
-// parseKeptBackOutput extracts package names from "apt-get upgrade -s"'s
-// "The following packages have been kept back:" section: packages with an
-// upgrade available that a conservative upgrade won't perform because it
-// would need to install or remove something else first. The section is a
-// run of "  "-indented lines (names wrapped across several lines for a
-// long list), terminated by the first line that isn't indented that way.
-func parseKeptBackOutput(out string) []string {
-	const marker = "The following packages have been kept back:"
+// parseNamesUnderMarker extracts the names listed under a section header
+// line starting with marker, as "apt-get upgrade -s" prints them: a run of
+// "  "-indented lines (names wrapped across several lines for a long
+// list), terminated by the first line that isn't indented that way.
+func parseNamesUnderMarker(out, marker string) []string {
 	var names []string
 	inSection := false
 	for _, line := range strings.Split(out, "\n") {
@@ -313,17 +310,41 @@ func parseKeptBackOutput(out string) []string {
 	return names
 }
 
-// UpgradeConflicts reports packages a conservative "apt-get upgrade" would
-// leave behind (as opposed to "upgrade all" in this UI, which already uses
-// dist-upgrade and resolves most of these on its own — see UpgradeCmd).
-// Implements pkg.ConflictReporter.
+// parseKeptBackOutput extracts package names from "apt-get upgrade -s"'s
+// "The following packages have been kept back:" section: packages with an
+// upgrade available that a conservative upgrade won't perform because it
+// would need to install or remove something else first.
+func parseKeptBackOutput(out string) []string {
+	return parseNamesUnderMarker(out, "The following packages have been kept back:")
+}
+
+// parsePhasedOutput extracts package names from "apt-get upgrade -s"'s
+// "The following upgrades have been deferred due to phasing:" section
+// (apt >= 21.04, ubiquitous since Ubuntu 24.04): packages held back by
+// Ubuntu's gradual update rollout rather than a dependency conflict. This
+// is orthogonal to dist-upgrade vs. plain upgrade — "upgrade all" (which
+// uses dist-upgrade, see UpgradeCmd) does not bypass phasing either, so
+// these would otherwise show as plainly "upgradable" (apt list
+// --upgradable lists them regardless of phasing) without ever actually
+// being picked up by "upgrade all".
+func parsePhasedOutput(out string) []string {
+	return parseNamesUnderMarker(out, "The following upgrades have been deferred due to phasing:")
+}
+
+// UpgradeConflicts reports packages "upgrade all" (dist-upgrade) won't
+// actually touch despite showing up as upgradable elsewhere: a
+// conservative "apt-get upgrade" simulation surfaces both dependency-based
+// holdbacks (which dist-upgrade resolves on its own — see UpgradeCmd) and
+// phased-rollout holdbacks (which it doesn't). Implements
+// pkg.ConflictReporter.
 func (m *Manager) UpgradeConflicts() ([]pkg.UpgradeConflict, error) {
 	out, err := exec.Command("apt-get", "upgrade", "-s").Output()
 	if err != nil {
 		return nil, fmt.Errorf("apt-get upgrade -s: %w", err)
 	}
-	names := parseKeptBackOutput(string(out))
-	if len(names) == 0 {
+	keptBack := parseKeptBackOutput(string(out))
+	phased := parsePhasedOutput(string(out))
+	if len(keptBack) == 0 && len(phased) == 0 {
 		return nil, nil
 	}
 	held := map[string]bool{}
@@ -332,13 +353,16 @@ func (m *Manager) UpgradeConflicts() ([]pkg.UpgradeConflict, error) {
 			held[name] = e.Held
 		}
 	}
-	items := make([]pkg.UpgradeConflict, 0, len(names))
-	for _, name := range names {
+	items := make([]pkg.UpgradeConflict, 0, len(keptBack)+len(phased))
+	for _, name := range keptBack {
 		reason := "needs a dependency change (install/remove something else) a plain upgrade won't perform on its own"
 		if held[name] {
 			reason = "held (apt-mark hold)"
 		}
 		items = append(items, pkg.UpgradeConflict{Name: name, Reason: reason})
+	}
+	for _, name := range phased {
+		items = append(items, pkg.UpgradeConflict{Name: name, Reason: "held back by Ubuntu's phased rollout, not yet offered to this machine (upgrading it by name bypasses phasing)"})
 	}
 	return items, nil
 }

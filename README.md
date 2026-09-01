@@ -134,7 +134,10 @@ own:
   something else first — distinct from an explicit hold, which already
   has its own `◆` marker. "Upgrade all" (`U`) already resolves most of
   these on its own (it uses `dist-upgrade`); this is what tells you
-  *which* ones and *why*.
+  *which* ones and *why*. Also surfaces packages Ubuntu's phased update
+  rollout is holding back from this machine, which show up as plainly
+  "upgradable" everywhere else but that neither a plain upgrade nor
+  `dist-upgrade` will actually touch until the rollout reaches you.
 - **Action log (`L`)**: every privileged action run this session, all
   backends together, with a timestamp and success/failure — a running
   record of what you actually did, without digging through shell
@@ -265,7 +268,7 @@ pkgtui
 | `O`         | Backend overlap view: packages installed more than once, stale snaps |
 | `V`         | Install a specific version of the selected package / downgrade (apt); revert to the previous revision (snap) |
 | `M`         | Metrics dashboard: installed packages ranked by disk usage |
-| `X`         | Upgrade conflicts: packages a plain upgrade would keep back (apt) |
+| `X`         | Upgrade conflicts: packages a plain upgrade would keep back, or Ubuntu's phased rollout is holding back (apt) |
 | `L`         | Action log: what's run this session, and whether it succeeded |
 | `y` / `n`   | Confirm / cancel an action                  |
 | `esc`       | Go back                                     |
