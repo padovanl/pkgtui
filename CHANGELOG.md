@@ -31,6 +31,15 @@ follow [SemVer](https://semver.org/).
   cask also clears the Gatekeeper quarantine attribute, which these
   un-notarized binaries would otherwise trip over on first run.
 
+### Fixed
+
+- **Upgrade conflicts (`X`, apt)** now also reports packages held back by
+  Ubuntu's phased-update rollout, not just dependency-based holdbacks:
+  these showed up as plain "upgradable" with no indication that "upgrade
+  all" (`U`, dist-upgrade) won't actually touch them until the rollout
+  reaches this machine (see
+  [#9](https://github.com/padovanl/pkgtui/issues/9)).
+
 ### Changed
 
 - The `P` screen manages **third-party sources generally**, not just apt

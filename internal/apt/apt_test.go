@@ -301,6 +301,29 @@ func TestParseKeptBackOutputNothingKeptBack(t *testing.T) {
 	}
 }
 
+func TestParsePhasedOutput(t *testing.T) {
+	out := `Reading package lists...
+Building dependency tree...
+Reading state information...
+Calculating upgrade...
+The following upgrades have been deferred due to phasing:
+  libglapi-mesa libgl1-mesa-dri
+0 upgraded, 0 newly installed, 0 to remove and 2 not upgraded.
+`
+	got := parsePhasedOutput(out)
+	want := []string{"libglapi-mesa", "libgl1-mesa-dri"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("parsePhasedOutput() = %v, want %v", got, want)
+	}
+}
+
+func TestParsePhasedOutputNothingPhased(t *testing.T) {
+	out := "Reading package lists...\nBuilding dependency tree...\n0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.\n"
+	if got := parsePhasedOutput(out); len(got) != 0 {
+		t.Errorf("parsePhasedOutput() = %v, want empty", got)
+	}
+}
+
 func TestParseUnattendedUpgradesLogNoMatches(t *testing.T) {
 	ts, pkgs := parseUnattendedUpgradesLog("nothing relevant here\n")
 	if ts != "" || pkgs != nil {
