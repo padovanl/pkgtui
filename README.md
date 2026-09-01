@@ -211,7 +211,30 @@ URL for repos named that way.
 
 The cask covers Apple Silicon, Intel Macs and Linuxbrew, and clears the
 Gatekeeper quarantine attribute itself, which matters because these
-binaries aren't notarized.
+binaries aren't notarized. macOS still requires one manual approval on
+the very first launch, since the binary is unsigned — not required again
+after that:
+
+1. Right after `brew install --cask pkgtui` finishes, macOS reports
+   *"pkgtui" Not Opened* since the binary isn't notarized — click
+   **Done** (not Move to Bin), it's already on your `PATH`.
+
+   <img src="https://raw.githubusercontent.com/padovanl/pkgtui/main/assets/macos-first-run/01-not-opened.png" alt="macOS dialog reading pkgtui Not Opened, with Done and Move to Bin buttons" width="420">
+
+2. Open **System Settings → Privacy & Security**, scroll down to the
+   note that *"pkgtui" was blocked to protect your Mac*, and click
+   **Allow Anyway**.
+
+   <img src="https://raw.githubusercontent.com/padovanl/pkgtui/main/assets/macos-first-run/02-allow-anyway.png" alt="macOS Privacy and Security settings showing pkgtui was blocked, with an Allow Anyway button" width="420">
+
+3. Open a terminal and run `pkgtui` again — an *Open "pkgtui"?* prompt
+   appears, click **Open Anyway**, then enter your password when asked.
+   `pkgtui` starts normally from then on.
+
+   <img src="https://raw.githubusercontent.com/padovanl/pkgtui/main/assets/macos-first-run/03-open-anyway.png" alt="macOS dialog asking Open pkgtui, with Move to Bin, Open Anyway and Done buttons" width="420">
+
+(Thanks to [@Sk8teb0arder](https://github.com/Sk8teb0arder) for walking
+through this and sharing the screenshots.)
 
 ### macOS without Homebrew
 
