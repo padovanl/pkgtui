@@ -20,7 +20,7 @@ issues: https://github.com/padovanl/pkgtui/issues
 source-code: https://github.com/padovanl/pkgtui
 website: https://github.com/padovanl/pkgtui
 license: MIT
-icon: assets/icon.svg
+icon: assets/logo.png
 
 grade: stable
 confinement: classic
