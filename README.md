@@ -1,5 +1,9 @@
 # pkgtui 📦
 
+<p align="center">
+  <img src="assets/logo.png" alt="pkgtui logo: a package with a terminal prompt" width="200">
+</p>
+
 [![CI](https://github.com/padovanl/pkgtui/actions/workflows/ci.yml/badge.svg)](https://github.com/padovanl/pkgtui/actions/workflows/ci.yml)
 [![Release](https://github.com/padovanl/pkgtui/actions/workflows/release.yml/badge.svg)](https://github.com/padovanl/pkgtui/actions/workflows/release.yml)
 [![Latest release](https://img.shields.io/github/v/release/padovanl/pkgtui?sort=semver)](https://github.com/padovanl/pkgtui/releases/latest)

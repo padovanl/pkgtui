@@ -7,20 +7,19 @@ title: pkgtui
 summary: An htop-style TUI to search/install/remove apt and snap packages
 description: |
   pkgtui is a terminal UI (TUI) in the style of htop for searching,
-  installing, removing and upgrading apt and snap packages from a single
+  installing, removing and upgrading apt, snap and flatpak packages from a single
   dashboard, without having to remember the syntax of either package manager.
 
   This snap uses "classic" confinement because pkgtui needs to invoke
-  apt-get/dpkg/snap on the host system to do its job. It is not meant to be
-  published on the Snap Store, but installed locally with:
-
-    snap install --dangerous --classic pkgtui_<version>_<arch>.snap
+  the host system's package managers and manage host-installed packages.
+  Operations that change packages require confirmation and use the host's
+  authorization mechanisms.
 contact: https://github.com/padovanl/pkgtui/issues
 issues: https://github.com/padovanl/pkgtui/issues
 source-code: https://github.com/padovanl/pkgtui
 website: https://github.com/padovanl/pkgtui
 license: MIT
-icon: assets/icon.svg
+icon: assets/logo-snap.png
 
 grade: stable
 confinement: classic
@@ -34,11 +33,12 @@ parts:
   pkgtui:
     plugin: go
     source: .
+    build-environment:
+      - CGO_ENABLED: "0"
     build-snaps:
       - go/1.24/stable
     # pkgtui is a statically linked Go binary (CGO_ENABLED=0): it has no
-    # shared library dependencies for patchelf to fix up, so skip it to
-    # silence the classic-confinement ELF interpreter/rpath lint warnings.
+    # shared library dependencies or ELF interpreter for patchelf to fix up.
     build-attributes:
       - no-patchelf
     override-pull: |
