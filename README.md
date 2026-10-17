@@ -10,6 +10,7 @@
 [![Downloads](https://img.shields.io/github/downloads/padovanl/pkgtui/total)](https://github.com/padovanl/pkgtui/releases)
 [![Go version](https://img.shields.io/github/go-mod/go-version/padovanl/pkgtui)](go.mod)
 [![License: MIT](https://img.shields.io/github/license/padovanl/pkgtui)](LICENSE)
+[![APT](https://img.shields.io/endpoint?url=https%3A%2F%2Fapt.lucapadovan.dev%2Fbadges%2Fpkgtui.json&logo=debian)](#apt-repository-debianubuntu-and-derivatives)
 
 An **htop-style** terminal UI (TUI) to search, install, remove and upgrade
 packages from **apt**, **snap**, **flatpak**, **Homebrew** and **MacPorts**,
@@ -162,7 +163,8 @@ own:
 
 ## 📥 Installation
 
-No verification/store required: grab the asset from the [releases
+On Debian and Ubuntu, the APT repository below keeps pkgtui up to date.
+Otherwise, grab the asset from the [releases
 page](https://github.com/padovanl/pkgtui/releases) and install it locally.
 The `.deb` and `.snap` both register an application entry and icon, so
 pkgtui shows up in your desktop's app launcher (opening in a terminal,
@@ -175,7 +177,22 @@ release](https://github.com/padovanl/pkgtui/releases/latest) rather than
 guessing. The commands use `-f` so curl fails loudly on a wrong URL instead
 of silently saving GitHub's "not found" page as if it were the package.
 
+### APT repository (Debian/Ubuntu and derivatives)
+
+```bash
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://apt.lucapadovan.dev/lucapadovan.gpg | sudo tee /etc/apt/keyrings/lucapadovan.gpg >/dev/null
+echo "deb [signed-by=/etc/apt/keyrings/lucapadovan.gpg] https://apt.lucapadovan.dev stable main" \
+  | sudo tee /etc/apt/sources.list.d/lucapadovan.list
+sudo apt update && sudo apt install pkgtui
+```
+
+Updates then arrive with `apt upgrade`. The repository at
+[apt.lucapadovan.dev](https://apt.lucapadovan.dev) serves amd64 and arm64.
+
 ### `.deb` package (Debian/Ubuntu and derivatives)
+
+A single package that does not update on its own; prefer the APT repository.
 
 ```bash
 curl -fLO https://github.com/padovanl/pkgtui/releases/latest/download/pkgtui_<version>_amd64.deb
